@@ -1,0 +1,162 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum CanalVenta {
+  tienda_fisica
+  whatsapp
+  instagram
+  facebook
+  tiktok
+  marketplace
+  otro
+}
+
+enum OrigenCarga {
+  manual
+  importacion
+}
+
+enum TipoAlerta {
+  crecimiento_canal
+  decimiento_canal
+  alerta_stock
+  alerta_ventas
+}
+
+enum TipoMovimiento {
+  ingreso
+  venta
+  ajuste
+}
+
+enum TipoProducto {
+  producto
+  servicio
+}
+
+enum UnidadMedida {
+  unidad
+  kilogramo
+  gramo
+  litro
+  mililitro
+  metro
+  hora
+  sesion
+  paquete
+  docena
+  otro
+}
+
+model Negocio {
+  id        String      @id @default(cuid())
+  nombre    String
+  rubro     String
+  email     String      @unique
+  password  String
+  telefono  String
+  canales   CanalVenta[]
+  otroCanalNombre      String?
+  otroCanalDescripcion String?
+  productos Producto[]
+  ventas    Venta[]
+  clientes  Cliente[]
+  alertas   Alerta[]
+  movimientos MovimientoInventario[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model Producto {
+  id           String       @id @default(cuid())
+  codigo       String
+  nombre       String
+  categoria    String?
+  tipo         TipoProducto @default(producto)
+  unidad       UnidadMedida @default(unidad)
+  stock        Int          @default(0)
+  stockMinimo  Int          @default(0)
+  precioVenta  Float?
+  precioCosto  Float?
+  negocioId    String
+  negocio      Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  ventas       Venta[]
+  movimientos  MovimientoInventario[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([negocioId, codigo])
+}
+
+model Cliente {
+  id             String      @id @default(cuid())
+  codigo         String
+  nombre         String
+  telefono       String?
+  dni            String?
+  direccion      String?
+  canalPreferido CanalVenta?
+  notas          String?
+  negocioId      String
+  negocio        Negocio     @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  ventas         Venta[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([negocioId, nombre])
+}
+
+model Venta {
+  id          String      @id @default(cuid())
+  canal       CanalVenta
+  cantidad    Int
+  monto       Float
+  fechaVenta  DateTime
+  cliente     String?
+  clienteId   String?
+  origenCarga OrigenCarga @default(manual)
+  negocioId   String
+  negocio     Negocio     @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  productoId  String
+  producto    Producto    @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  clienteRel  Cliente?    @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  movimientos MovimientoInventario[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model MovimientoInventario {
+  id              String         @id @default(cuid())
+  productoId      String
+  producto        Producto       @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  negocioId       String
+  negocio         Negocio        @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  tipo            TipoMovimiento
+  cantidad        Int
+  stockResultante Int
+  motivo          String?
+  ventaId         String?
+  venta           Venta?         @relation(fields: [ventaId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+}
+
+model Alerta {
+  id        String     @id @default(cuid())
+  tipo      TipoAlerta
+  mensaje   String
+  metadata   Json?
+  leida     Boolean    @default(false)
+  negocioId String
+  negocio   Negocio    @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
