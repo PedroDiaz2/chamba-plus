@@ -13,6 +13,9 @@ __v0_jsx-dev-runtime.ts
 # Claude Code local settings
 .claude/settings.local.json
 
+# Office lock files
+~$*
+
 # Common ignores
 node_modules
 .next/

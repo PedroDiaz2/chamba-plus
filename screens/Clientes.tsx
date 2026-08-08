@@ -74,6 +74,7 @@ export default function Clientes() {
   const [showImportarMasivo, setShowImportarMasivo] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
 
   const [formCliente, setFormCliente] = useState(FORM_VACIO);
 
@@ -207,6 +208,7 @@ export default function Clientes() {
     }
 
     setImportLoading(true);
+    setImportErrors([]);
     try {
       const text = await csvFile.text();
       const lines = text.split('\n').filter((line) => line.trim());
@@ -240,15 +242,16 @@ export default function Clientes() {
         return;
       }
 
+      fetchClientes();
+      setCsvFile(null);
+
       if (data.erroresCount > 0) {
-        toast.warning(`Importación completada con ${data.erroresCount} error(es). Revisa el detalle.`);
+        setImportErrors(data.errores);
+        toast.warning(`Se importaron ${data.creados} de ${data.totalProcesado}. ${data.erroresCount} fila(s) con errores, revisa el detalle abajo.`);
       } else {
         toast.success(`Se importaron ${data.creados} clientes correctamente`);
+        setShowImportarMasivo(false);
       }
-
-      setCsvFile(null);
-      setShowImportarMasivo(false);
-      fetchClientes();
     } catch (error) {
       toast.error('Error al procesar el archivo CSV');
     } finally {
@@ -500,7 +503,7 @@ export default function Clientes() {
       </AlertDialog>
 
       {/* Importar Masivo Dialog */}
-      <Dialog open={showImportarMasivo} onOpenChange={setShowImportarMasivo}>
+      <Dialog open={showImportarMasivo} onOpenChange={(open) => { setShowImportarMasivo(open); if (!open) { setCsvFile(null); setImportErrors([]); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Importar clientes</DialogTitle>
@@ -560,13 +563,26 @@ export default function Clientes() {
               </ul>
             </div>
 
+            {importErrors.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-red-600">
+                  {importErrors.length} fila(s) no se pudieron importar:
+                </p>
+                <div className="max-h-40 overflow-y-auto border border-red-200 rounded-lg bg-red-50 p-3 space-y-1">
+                  {importErrors.map((err, idx) => (
+                    <p key={idx} className="text-xs text-red-700">{err}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2 justify-end">
               <Button
                 variant="outline"
                 className="border-[#d5d5d2]"
-                onClick={() => { setShowImportarMasivo(false); setCsvFile(null); }}
+                onClick={() => { setShowImportarMasivo(false); setCsvFile(null); setImportErrors([]); }}
               >
-                Cancelar
+                {importErrors.length > 0 ? 'Cerrar' : 'Cancelar'}
               </Button>
               <Button
                 onClick={handleImportCSV}

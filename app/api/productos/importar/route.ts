@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
               continue;
             }
           }
-          if (fila.stockMinimo !== undefined && fila.stockMinimo !== '') {
-            stockMinimo = parseInt(fila.stockMinimo, 10);
+          if (fila.stockminimo !== undefined && fila.stockminimo !== '') {
+            stockMinimo = parseInt(fila.stockminimo, 10);
             if (isNaN(stockMinimo) || stockMinimo < 0) {
               errores.push(`Línea ${linea}: El stock mínimo no puede ser negativo`);
               continue;
@@ -77,8 +77,8 @@ export async function POST(request: NextRequest) {
         }
 
         let precioVenta: number | null = null;
-        if (fila.precioVenta !== undefined && fila.precioVenta !== '') {
-          precioVenta = parseFloat(fila.precioVenta);
+        if (fila.precioventa !== undefined && fila.precioventa !== '') {
+          precioVenta = parseFloat(fila.precioventa);
           if (isNaN(precioVenta) || precioVenta < 0) {
             errores.push(`Línea ${linea}: El precio de venta no puede ser negativo`);
             continue;
@@ -86,8 +86,8 @@ export async function POST(request: NextRequest) {
         }
 
         let precioCosto: number | null = null;
-        if (fila.precioCosto !== undefined && fila.precioCosto !== '') {
-          precioCosto = parseFloat(fila.precioCosto);
+        if (fila.preciocosto !== undefined && fila.preciocosto !== '') {
+          precioCosto = parseFloat(fila.preciocosto);
           if (isNaN(precioCosto) || precioCosto < 0) {
             errores.push(`Línea ${linea}: El precio de costo no puede ser negativo`);
             continue;

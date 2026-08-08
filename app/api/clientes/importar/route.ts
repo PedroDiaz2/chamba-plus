@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
         }
 
         let canalPreferido: CanalVenta | null = null;
-        if (fila.canalPreferido && String(fila.canalPreferido).trim()) {
-          const canalRaw = String(fila.canalPreferido).trim().toLowerCase();
+        if (fila.canalpreferido && String(fila.canalpreferido).trim()) {
+          const canalRaw = String(fila.canalpreferido).trim().toLowerCase();
           if (!Object.values(CanalVenta).includes(canalRaw as CanalVenta)) {
-            errores.push(`Línea ${linea}: Canal preferido inválido "${fila.canalPreferido}"`);
+            errores.push(`Línea ${linea}: Canal preferido inválido "${fila.canalpreferido}"`);
             continue;
           }
           canalPreferido = canalRaw as CanalVenta;
