@@ -22,7 +22,53 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+
+type PeriodoDashboard = 'todo' | 'mes' | 'mesAnterior' | '7dias' | '30dias' | 'anio';
+
+const PERIODO_LABELS: Record<PeriodoDashboard, string> = {
+  todo: 'Todo el historial',
+  mes: 'Este mes',
+  mesAnterior: 'Mes anterior',
+  '7dias': 'Últimos 7 días',
+  '30dias': 'Últimos 30 días',
+  anio: 'Este año',
+};
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const formatDateLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+function calcularRango(periodo: PeriodoDashboard): { fechaInicio?: string; fechaFin?: string } {
+  const hoy = new Date();
+  switch (periodo) {
+    case 'mes': {
+      const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+      return { fechaInicio: formatDateLocal(inicio), fechaFin: formatDateLocal(hoy) };
+    }
+    case 'mesAnterior': {
+      const inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+      const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+      return { fechaInicio: formatDateLocal(inicio), fechaFin: formatDateLocal(fin) };
+    }
+    case '7dias': {
+      const inicio = new Date(hoy);
+      inicio.setDate(inicio.getDate() - 6);
+      return { fechaInicio: formatDateLocal(inicio), fechaFin: formatDateLocal(hoy) };
+    }
+    case '30dias': {
+      const inicio = new Date(hoy);
+      inicio.setDate(inicio.getDate() - 29);
+      return { fechaInicio: formatDateLocal(inicio), fechaFin: formatDateLocal(hoy) };
+    }
+    case 'anio': {
+      const inicio = new Date(hoy.getFullYear(), 0, 1);
+      return { fechaInicio: formatDateLocal(inicio), fechaFin: formatDateLocal(hoy) };
+    }
+    default:
+      return {};
+  }
+}
 
 const CANAL_LABELS: Record<string, string> = {
   tienda_fisica: 'Tienda física',
@@ -81,15 +127,35 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [tipoItemFiltro, setTipoItemFiltro] = useState<'todos' | 'producto' | 'servicio'>('todos');
+  const [periodoFiltro, setPeriodoFiltro] = useState<PeriodoDashboard>('todo');
+  const [usarRangoPersonalizado, setUsarRangoPersonalizado] = useState(false);
+  const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
+  const [fechaFinPersonalizada, setFechaFinPersonalizada] = useState('');
 
   useEffect(() => {
-    fetchDashboard(tipoItemFiltro);
-  }, [tipoItemFiltro]);
+    if (usarRangoPersonalizado && (!fechaInicioPersonalizada || !fechaFinPersonalizada)) return;
+    fetchDashboard();
+  }, [tipoItemFiltro, periodoFiltro, usarRangoPersonalizado, fechaInicioPersonalizada, fechaFinPersonalizada]);
 
-  const fetchDashboard = async (tipoItem: string) => {
+  const fetchDashboard = async () => {
+    setLoading(true);
     try {
-      const params = tipoItem !== 'todos' ? `?tipoItem=${tipoItem}` : '';
-      const response = await fetch(`/api/dashboard${params}`);
+      const params = new URLSearchParams();
+      if (tipoItemFiltro !== 'todos') params.set('tipoItem', tipoItemFiltro);
+
+      if (usarRangoPersonalizado) {
+        if (fechaInicioPersonalizada && fechaFinPersonalizada) {
+          params.set('fechaInicio', fechaInicioPersonalizada);
+          params.set('fechaFin', fechaFinPersonalizada);
+        }
+      } else if (periodoFiltro !== 'todo') {
+        const rango = calcularRango(periodoFiltro);
+        if (rango.fechaInicio) params.set('fechaInicio', rango.fechaInicio);
+        if (rango.fechaFin) params.set('fechaFin', rango.fechaFin);
+      }
+
+      const qs = params.toString();
+      const response = await fetch(`/api/dashboard${qs ? `?${qs}` : ''}`);
       const result = await response.json();
       if (response.ok) {
         setData(result);
@@ -149,6 +215,71 @@ export default function Dashboard() {
         <h2 className="text-3xl font-bold mb-2">Hola, {negocio.nombre}</h2>
         <p className="text-muted-foreground">{new Date().toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
+
+      {/* Filtro de periodo */}
+      <Card className="bg-white">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <Label htmlFor="periodoDashboard">Periodo</Label>
+              <Select
+                value={periodoFiltro}
+                onValueChange={(v) => { setPeriodoFiltro(v as PeriodoDashboard); setUsarRangoPersonalizado(false); }}
+                disabled={usarRangoPersonalizado}
+              >
+                <SelectTrigger id="periodoDashboard">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PERIODO_LABELS) as PeriodoDashboard[]).map((p) => (
+                    <SelectItem key={p} value={p}>{PERIODO_LABELS[p]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-end pt-2 border-t border-[#e5e5e3]">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="rangoPersonalizadoDashboard"
+                checked={usarRangoPersonalizado}
+                onChange={(e) => setUsarRangoPersonalizado(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="rangoPersonalizadoDashboard" className="cursor-pointer">Usar un rango de fechas específico</Label>
+            </div>
+            {usarRangoPersonalizado && (
+              <>
+                <div>
+                  <Label htmlFor="fechaInicioDashboard">Desde</Label>
+                  <input
+                    id="fechaInicioDashboard"
+                    type="date"
+                    value={fechaInicioPersonalizada}
+                    max={fechaFinPersonalizada || undefined}
+                    onChange={(e) => setFechaInicioPersonalizada(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#d5d5d2] rounded-md bg-white text-sm"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="fechaFinDashboard">Hasta</Label>
+                  <input
+                    id="fechaFinDashboard"
+                    type="date"
+                    value={fechaFinPersonalizada}
+                    min={fechaInicioPersonalizada || undefined}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setFechaFinPersonalizada(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#d5d5d2] rounded-md bg-white text-sm"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* KPI Summary - Resumen de hoy */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

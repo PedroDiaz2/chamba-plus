@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { construirBuckets, Periodo } from '@/lib/periodos';
+import { construirBuckets, construirBucketsRango, Periodo } from '@/lib/periodos';
+import { parsearFechaLocal } from '@/lib/fechas';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,6 +17,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const periodo = (searchParams.get('periodo') || 'mes') as Periodo;
     const productoId = searchParams.get('productoId');
+    const fechaInicioParam = searchParams.get('fechaInicio');
+    const fechaFinParam = searchParams.get('fechaFin');
 
     if (!productoId) {
       return NextResponse.json(
@@ -35,11 +38,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const buckets = construirBuckets(periodo);
+    const usaRangoPersonalizado = !!(fechaInicioParam && fechaFinParam);
+
+    let buckets;
+    if (usaRangoPersonalizado) {
+      const fechaInicio = parsearFechaLocal(fechaInicioParam!);
+      const fechaFin = parsearFechaLocal(fechaFinParam!);
+      if (isNaN(fechaInicio.getTime()) || isNaN(fechaFin.getTime()) || fechaInicio > fechaFin) {
+        return NextResponse.json(
+          { error: 'Rango de fechas inválido' },
+          { status: 400 }
+        );
+      }
+      buckets = construirBucketsRango(fechaInicio, fechaFin);
+    } else {
+      buckets = construirBuckets(periodo);
+    }
+
     const desde = buckets[0].inicio;
+    const hasta = buckets[buckets.length - 1].fin;
 
     const ventas = await prisma.venta.findMany({
-      where: { negocioId, productoId, fechaVenta: { gte: desde } },
+      where: { negocioId, productoId, fechaVenta: { gte: desde, lt: hasta } },
       select: { cantidad: true, monto: true, fechaVenta: true }
     });
 

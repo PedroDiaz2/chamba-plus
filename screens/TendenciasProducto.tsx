@@ -45,16 +45,20 @@ export default function TendenciasProducto() {
   const [loading, setLoading] = useState(false);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [data, setData] = useState<TendenciaData[]>([]);
+  const [usarRangoPersonalizado, setUsarRangoPersonalizado] = useState(false);
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
 
   useEffect(() => {
     fetchProductos();
+    seleccionarProductoTop();
   }, []);
 
   useEffect(() => {
-    if (productoSeleccionado) {
-      fetchTendencias();
-    }
-  }, [productoSeleccionado, periodo]);
+    if (!productoSeleccionado) return;
+    if (usarRangoPersonalizado && (!fechaInicio || !fechaFin)) return;
+    fetchTendencias();
+  }, [productoSeleccionado, periodo, usarRangoPersonalizado, fechaInicio, fechaFin]);
 
   const fetchProductos = async () => {
     try {
@@ -70,10 +74,42 @@ export default function TendenciasProducto() {
     }
   };
 
+  // Preselecciona el producto/servicio más vendido (por unidades) para que la
+  // pantalla muestre datos útiles de inmediato, sin exigir que el usuario busque
+  // uno manualmente.
+  const seleccionarProductoTop = async () => {
+    try {
+      const response = await fetch('/api/ventas');
+      const data = await response.json();
+      if (!response.ok) return;
+
+      const cantidadPorProducto: Record<string, number> = {};
+      for (const venta of data.ventas || []) {
+        const id = venta.producto?.id;
+        if (!id) continue;
+        cantidadPorProducto[id] = (cantidadPorProducto[id] || 0) + venta.cantidad;
+      }
+
+      const topEntry = Object.entries(cantidadPorProducto).sort((a, b) => b[1] - a[1])[0];
+      if (topEntry) {
+        setProductoSeleccionado(topEntry[0]);
+      }
+    } catch (error) {
+      // Silencioso: si falla, el usuario simplemente elige un producto manualmente.
+    }
+  };
+
   const fetchTendencias = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/ventas/tendencias-producto?productoId=${productoSeleccionado}&periodo=${periodo}`);
+      const params = new URLSearchParams({ productoId: productoSeleccionado });
+      if (usarRangoPersonalizado && fechaInicio && fechaFin) {
+        params.set('fechaInicio', fechaInicio);
+        params.set('fechaFin', fechaFin);
+      } else {
+        params.set('periodo', periodo);
+      }
+      const response = await fetch(`/api/ventas/tendencias-producto?${params.toString()}`);
       const result = await response.json();
       if (response.ok) {
         setData(result.data);
@@ -149,7 +185,7 @@ export default function TendenciasProducto() {
             </div>
             <div>
               <Label htmlFor="periodo">Periodo</Label>
-              <Select value={periodo} onValueChange={setPeriodo}>
+              <Select value={periodo} onValueChange={(v) => { setPeriodo(v); setUsarRangoPersonalizado(false); }} disabled={usarRangoPersonalizado}>
                 <SelectTrigger id="periodo">
                   <SelectValue />
                 </SelectTrigger>
@@ -165,6 +201,46 @@ export default function TendenciasProducto() {
                 Actualizar
               </Button>
             </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-end pt-4 mt-4 border-t border-[#e5e5e3]">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="rangoPersonalizadoTendencias"
+                checked={usarRangoPersonalizado}
+                onChange={(e) => setUsarRangoPersonalizado(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="rangoPersonalizadoTendencias" className="cursor-pointer">Usar un rango de fechas específico</Label>
+            </div>
+            {usarRangoPersonalizado && (
+              <>
+                <div>
+                  <Label htmlFor="fechaInicioTendencias">Desde</Label>
+                  <input
+                    id="fechaInicioTendencias"
+                    type="date"
+                    value={fechaInicio}
+                    max={fechaFin || undefined}
+                    onChange={(e) => setFechaInicio(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#d5d5d2] rounded-md bg-white text-sm"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="fechaFinTendencias">Hasta</Label>
+                  <input
+                    id="fechaFinTendencias"
+                    type="date"
+                    value={fechaFin}
+                    min={fechaInicio || undefined}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setFechaFin(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#d5d5d2] rounded-md bg-white text-sm"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

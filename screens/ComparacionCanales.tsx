@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -103,6 +104,24 @@ export default function ComparacionCanales() {
   };
 
   const formatValor = (value: number) => (metrica === 'cantidad' ? `${value}` : `S/ ${value.toFixed(2)}`);
+
+  // Resumen por canal (total/promedio/máximo/mínimo), reutilizado por la tabla y por
+  // el destacado del canal con mejor rendimiento del periodo.
+  const resumenPorCanal = canales.map((canal) => {
+    const valores = data.map((d) => d[canal] as number);
+    const total = valores.reduce((sum, v) => sum + v, 0);
+    // Promedio y mínimo se calculan solo sobre periodos con actividad real,
+    // para no diluirlos con periodos en cero anteriores al inicio del canal.
+    const valoresActivos = valores.filter((v) => v > 0);
+    const promedio = valoresActivos.length > 0 ? total / valoresActivos.length : 0;
+    const maximo = valores.length > 0 ? Math.max(...valores) : 0;
+    const minimo = valoresActivos.length > 0 ? Math.min(...valoresActivos) : 0;
+    return { canal, total, promedio, maximo, minimo };
+  });
+
+  const canalTop = resumenPorCanal.length > 0
+    ? resumenPorCanal.reduce((mejor, actual) => (actual.total > mejor.total ? actual : mejor), resumenPorCanal[0])
+    : null;
 
   return (
     <div className="space-y-6">
@@ -199,6 +218,24 @@ export default function ComparacionCanales() {
         </Card>
       ) : (
       <>
+      {/* Canal con mejor rendimiento */}
+      {canalTop && canalTop.total > 0 && (
+        <Card className="bg-[#F0FAF6] border border-[#1D9E75]">
+          <CardContent className="pt-6 flex items-center gap-4">
+            <div
+              className="w-11 h-11 rounded-full flex items-center justify-center text-xl shrink-0"
+              style={{ backgroundColor: CANAL_COLORS[canalTop.canal] || '#7F77DD' }}
+            >
+              🏆
+            </div>
+            <div>
+              <p className="text-sm text-[#0F6E56] font-medium">Canal con mejor rendimiento en este periodo</p>
+              <p className="text-xl font-bold">{canalLabels[canalTop.canal] || canalTop.canal} — {formatValor(canalTop.total)}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Gráfico comparativo */}
       <Card className="bg-white border-t-4" style={{ borderTopColor: '#1D9E75' }}>
         <CardContent className="pt-6">
@@ -267,29 +304,21 @@ export default function ComparacionCanales() {
                 </tr>
               </thead>
               <tbody>
-                {canales.map((canal) => {
-                  const valores = data.map((d) => d[canal] as number);
-                  const total = valores.reduce((sum, v) => sum + v, 0);
-                  // Promedio y mínimo se calculan solo sobre periodos con actividad real,
-                  // para no diluirlos con periodos en cero anteriores al inicio del canal.
-                  const valoresActivos = valores.filter((v) => v > 0);
-                  const promedio = valoresActivos.length > 0 ? total / valoresActivos.length : 0;
-                  const maximo = valores.length > 0 ? Math.max(...valores) : 0;
-                  const minimo = valoresActivos.length > 0 ? Math.min(...valoresActivos) : 0;
-
-                  return (
-                    <tr key={canal} className="border-b border-[#e5e5e3] hover:bg-[#F7F8F6]">
-                      <td className="px-4 py-3 flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CANAL_COLORS[canal] }}></div>
-                        <span className="font-medium">{canalLabels[canal] || canal}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold">{formatValor(total)}</td>
-                      <td className="px-4 py-3 text-right">{formatValor(promedio)}</td>
-                      <td className="px-4 py-3 text-right">{formatValor(maximo)}</td>
-                      <td className="px-4 py-3 text-right">{formatValor(minimo)}</td>
-                    </tr>
-                  );
-                })}
+                {resumenPorCanal.map(({ canal, total, promedio, maximo, minimo }) => (
+                  <tr key={canal} className={`border-b border-[#e5e5e3] hover:bg-[#F7F8F6] ${canalTop?.canal === canal && total > 0 ? 'bg-[#F0FAF6]' : ''}`}>
+                    <td className="px-4 py-3 flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CANAL_COLORS[canal] }}></div>
+                      <span className="font-medium">{canalLabels[canal] || canal}</span>
+                      {canalTop?.canal === canal && total > 0 && (
+                        <Badge className="bg-[#1D9E75] text-white border-0">🏆 Top</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold">{formatValor(total)}</td>
+                    <td className="px-4 py-3 text-right">{formatValor(promedio)}</td>
+                    <td className="px-4 py-3 text-right">{formatValor(maximo)}</td>
+                    <td className="px-4 py-3 text-right">{formatValor(minimo)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

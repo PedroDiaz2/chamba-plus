@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { calcularKPIs } from '@/lib/kpi-engine';
 import { CanalVenta, TipoProducto } from '@prisma/client';
+import { parsearFechaLocal } from '@/lib/fechas';
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,8 +24,8 @@ export async function GET(request: NextRequest) {
     const filters: any = {};
     if (canal) filters.canal = canal as CanalVenta;
     if (fechaInicio && fechaFin) {
-      filters.fechaInicio = new Date(fechaInicio);
-      filters.fechaFin = new Date(fechaFin);
+      filters.fechaInicio = parsearFechaLocal(fechaInicio);
+      filters.fechaFin = parsearFechaLocal(fechaFin);
     }
     if (tipoItem === 'producto' || tipoItem === 'servicio') {
       filters.tipoItem = tipoItem as TipoProducto;
