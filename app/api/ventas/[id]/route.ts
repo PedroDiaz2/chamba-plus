@@ -26,18 +26,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const body = await request.json();
-    const { canal, monto, fechaVenta, cliente, clienteId } = body;
+    const { canal, fechaVenta, cliente, clienteId } = body;
 
     if (canal !== undefined && !Object.values(CanalVenta).includes(canal)) {
       return NextResponse.json(
         { error: 'Canal inválido' },
-        { status: 400 }
-      );
-    }
-
-    if (monto !== undefined && (!Number.isFinite(monto) || monto <= 0)) {
-      return NextResponse.json(
-        { error: 'El monto debe ser mayor a 0' },
         { status: 400 }
       );
     }
@@ -82,11 +75,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       where: { id },
       data: {
         ...(canal !== undefined && { canal: canal as CanalVenta }),
-        ...(monto !== undefined && { monto }),
         ...(fechaVentaDate !== undefined && { fechaVenta: fechaVentaDate }),
         ...(clienteIdFinal !== undefined && { clienteId: clienteIdFinal, cliente: clienteNombreFinal })
       },
-      include: { producto: true }
+      include: { items: { include: { producto: true } } }
     });
 
     return NextResponse.json({ venta: ventaActualizada }, { status: 200 });
@@ -114,7 +106,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     const venta = await prisma.venta.findFirst({
       where: { id, negocioId },
-      include: { producto: true }
+      include: { items: { include: { producto: true } } }
     });
 
     if (!venta) {
@@ -125,22 +117,22 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     }
 
     await prisma.$transaction(async (tx) => {
-      // Si el ítem vendido maneja stock, se restituye la cantidad vendida
-      if (venta.producto.tipo === TipoProducto.producto) {
-        const stockResultante = venta.producto.stock + venta.cantidad;
+      for (const item of venta.items) {
+        // Si el ítem vendido maneja stock, se restituye la cantidad vendida
+        if (item.producto.tipo !== TipoProducto.producto) continue;
 
-        await tx.producto.update({
-          where: { id: venta.productoId },
-          data: { stock: stockResultante }
+        const productoActualizado = await tx.producto.update({
+          where: { id: item.productoId },
+          data: { stock: { increment: item.cantidad } }
         });
 
         await tx.movimientoInventario.create({
           data: {
-            productoId: venta.productoId,
+            productoId: item.productoId,
             negocioId,
             tipo: TipoMovimiento.ajuste,
-            cantidad: venta.cantidad,
-            stockResultante,
+            cantidad: item.cantidad,
+            stockResultante: productoActualizado.stock,
             motivo: 'Reversión por eliminación de venta'
           }
         });

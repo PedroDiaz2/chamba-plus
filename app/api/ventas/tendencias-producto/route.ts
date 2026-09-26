@@ -58,17 +58,20 @@ export async function GET(request: NextRequest) {
     const desde = buckets[0].inicio;
     const hasta = buckets[buckets.length - 1].fin;
 
-    const ventas = await prisma.venta.findMany({
-      where: { negocioId, productoId, fechaVenta: { gte: desde, lt: hasta } },
-      select: { cantidad: true, monto: true, fechaVenta: true }
+    const items = await prisma.ventaItem.findMany({
+      where: {
+        productoId,
+        venta: { negocioId, fechaVenta: { gte: desde, lt: hasta } }
+      },
+      select: { cantidad: true, monto: true, venta: { select: { fechaVenta: true } } }
     });
 
     const data = buckets.map((bucket) => {
-      const ventasBucket = ventas.filter((v) => v.fechaVenta >= bucket.inicio && v.fechaVenta < bucket.fin);
+      const itemsBucket = items.filter((it) => it.venta.fechaVenta >= bucket.inicio && it.venta.fechaVenta < bucket.fin);
       return {
         periodo: bucket.label,
-        cantidad: ventasBucket.reduce((sum, v) => sum + v.cantidad, 0),
-        monto: ventasBucket.reduce((sum, v) => sum + v.monto, 0)
+        cantidad: itemsBucket.reduce((sum, it) => sum + it.cantidad, 0),
+        monto: itemsBucket.reduce((sum, it) => sum + it.monto, 0)
       };
     });
 

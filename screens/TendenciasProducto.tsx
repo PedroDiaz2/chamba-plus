@@ -85,9 +85,11 @@ export default function TendenciasProducto() {
 
       const cantidadPorProducto: Record<string, number> = {};
       for (const venta of data.ventas || []) {
-        const id = venta.producto?.id;
-        if (!id) continue;
-        cantidadPorProducto[id] = (cantidadPorProducto[id] || 0) + venta.cantidad;
+        for (const item of venta.items || []) {
+          const id = item.productoId;
+          if (!id) continue;
+          cantidadPorProducto[id] = (cantidadPorProducto[id] || 0) + item.cantidad;
+        }
       }
 
       const topEntry = Object.entries(cantidadPorProducto).sort((a, b) => b[1] - a[1])[0];

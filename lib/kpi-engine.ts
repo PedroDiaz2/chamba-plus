@@ -46,11 +46,19 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
     };
   }
 
-  // Obtener todas las ventas del negocio en el rango
+  // Obtener todas las ventas del negocio en el rango, con sus líneas de producto/servicio
   const ventas = await prisma.venta.findMany({
     where,
-    include: { producto: true }
+    include: { items: { include: { producto: true } } }
   });
+
+  // Vista aplanada a nivel de línea de venta (producto), usada para los KPIs que son
+  // por producto/servicio (top por canal, inventario, margen), mientras que `ventas`
+  // (a nivel de transacción) se usa para los KPIs que son por venta (participación,
+  // ticket promedio, frecuencia de compra, variación de periodos).
+  const itemsConVenta = ventas.flatMap((v) =>
+    v.items.map((item) => ({ ...item, canal: v.canal, fechaVenta: v.fechaVenta }))
+  );
 
   // 1. Participación de ventas por canal (%)
   const ventasPorCanal = ventas.reduce((acc, v) => {
@@ -112,16 +120,16 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
   );
 
   // 3. Producto top por canal (filtrable por tipo: producto o servicio)
-  const ventasParaTop = tipoItem ? ventas.filter((v) => v.producto.tipo === tipoItem) : ventas;
-  const productosPorCanal = ventasParaTop.reduce((acc, v) => {
-    if (!acc[v.canal]) {
-      acc[v.canal] = {};
+  const itemsParaTop = tipoItem ? itemsConVenta.filter((it) => it.producto.tipo === tipoItem) : itemsConVenta;
+  const productosPorCanal = itemsParaTop.reduce((acc, it) => {
+    if (!acc[it.canal]) {
+      acc[it.canal] = {};
     }
-    if (!acc[v.canal][v.producto.nombre]) {
-      acc[v.canal][v.producto.nombre] = { cantidad: 0, monto: 0 };
+    if (!acc[it.canal][it.producto.nombre]) {
+      acc[it.canal][it.producto.nombre] = { cantidad: 0, monto: 0 };
     }
-    acc[v.canal][v.producto.nombre].cantidad += v.cantidad;
-    acc[v.canal][v.producto.nombre].monto += v.monto;
+    acc[it.canal][it.producto.nombre].cantidad += it.cantidad;
+    acc[it.canal][it.producto.nombre].monto += it.monto;
     return acc;
   }, {} as Record<string, Record<string, { cantidad: number; monto: number }>>);
 
@@ -242,15 +250,15 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
     .filter((p) => p.stock <= p.stockMinimo)
     .map((p) => ({ id: p.id, nombre: p.nombre, stock: p.stock, stockMinimo: p.stockMinimo }));
 
-  const unidadesVendidasPeriodo = ventas
-    .filter((v) => v.producto.tipo === TipoProducto.producto)
-    .reduce((sum, v) => sum + v.cantidad, 0);
+  const unidadesVendidasPeriodo = itemsConVenta
+    .filter((it) => it.producto.tipo === TipoProducto.producto)
+    .reduce((sum, it) => sum + it.cantidad, 0);
   const stockPromedio = productosInventariables.length > 0
     ? productosInventariables.reduce((sum, p) => sum + p.stock, 0) / productosInventariables.length
     : 0;
   const rotacionInventario = stockPromedio > 0 ? unidadesVendidasPeriodo / stockPromedio : 0;
 
-  const productoIdsConVenta = new Set(ventas.map((v) => v.productoId));
+  const productoIdsConVenta = new Set(itemsConVenta.map((it) => it.productoId));
   const productosSinMovimiento = productosInventariables
     .filter((p) => !productoIdsConVenta.has(p.id))
     .map((p) => ({ id: p.id, nombre: p.nombre }));
@@ -281,14 +289,14 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
   }, {} as Record<string, number>);
   const clientesPorCanalPreferido = Object.entries(canalPreferidoCount).map(([canal, cantidad]) => ({ canal, cantidad }));
 
-  // 9. Margen bruto por canal (solo entre ventas cuyo producto tiene precioCosto cargado)
+  // 9. Margen bruto por canal (solo entre líneas cuyo producto tiene precioCosto cargado)
   const productoCostoMap = new Map(productos.map((p) => [p.id, p.precioCosto]));
-  const margenAcc = ventas.reduce((acc, v) => {
-    const costoUnitario = productoCostoMap.get(v.productoId);
+  const margenAcc = itemsConVenta.reduce((acc, it) => {
+    const costoUnitario = productoCostoMap.get(it.productoId);
     if (costoUnitario == null) return acc;
-    if (!acc[v.canal]) acc[v.canal] = { monto: 0, costo: 0 };
-    acc[v.canal].monto += v.monto;
-    acc[v.canal].costo += costoUnitario * v.cantidad;
+    if (!acc[it.canal]) acc[it.canal] = { monto: 0, costo: 0 };
+    acc[it.canal].monto += it.monto;
+    acc[it.canal].costo += costoUnitario * it.cantidad;
     return acc;
   }, {} as Record<string, { monto: number; costo: number }>);
   const margenPorCanal = Object.entries(margenAcc).map(([canal, { monto, costo }]) => ({

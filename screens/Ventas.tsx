@@ -43,15 +43,24 @@ interface Cliente {
   nombre: string;
 }
 
+interface VentaItemData {
+  id: string;
+  productoId: string;
+  cantidad: number;
+  precioUnitario: number;
+  monto: number;
+  producto: Producto;
+}
+
 interface Venta {
   id: string;
   canal: string;
-  cantidad: number;
   monto: number;
+  descuento: number;
   fechaVenta: string;
   cliente?: string | null;
   clienteId?: string | null;
-  producto: Producto;
+  items: VentaItemData[];
 }
 
 const CANAL_LABELS: Record<string, string> = {
@@ -67,15 +76,21 @@ const CANAL_LABELS: Record<string, string> = {
 const CLIENTE_NUEVO = '__nuevo__';
 const CLIENTE_OCASIONAL = '__ocasional__';
 
-const NUEVA_VENTA_VACIA = {
+interface ItemFormulario {
+  productoId: string;
+  cantidad: number;
+  precioUnitario: string;
+}
+
+const crearItemVacio = (): ItemFormulario => ({ productoId: '', cantidad: 1, precioUnitario: '' });
+
+const crearVentaVacia = () => ({
   canal: '',
-  productoId: '',
-  cantidad: 1,
-  precioUnitario: '',
+  items: [crearItemVacio()],
   descuento: '0',
   fechaVenta: new Date().toISOString().split('T')[0],
   clienteSeleccion: CLIENTE_OCASIONAL,
-};
+});
 
 export default function Ventas() {
   const [ventas, setVentas] = useState<Venta[]>([]);
@@ -91,7 +106,7 @@ export default function Ventas() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
 
-  const [nuevoVenta, setNuevoVenta] = useState(NUEVA_VENTA_VACIA);
+  const [nuevoVenta, setNuevoVenta] = useState(crearVentaVacia());
 
   // Modal de creación rápida de cliente desde el formulario de venta
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
@@ -100,7 +115,7 @@ export default function Ventas() {
 
   // Edición / eliminación de ventas existentes
   const [editingVenta, setEditingVenta] = useState<Venta | null>(null);
-  const [formEdicion, setFormEdicion] = useState({ canal: '', monto: '', fechaVenta: '', clienteSeleccion: CLIENTE_OCASIONAL });
+  const [formEdicion, setFormEdicion] = useState({ canal: '', fechaVenta: '', clienteSeleccion: CLIENTE_OCASIONAL });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [ventaAEliminar, setVentaAEliminar] = useState<Venta | null>(null);
   const [eliminandoVenta, setEliminandoVenta] = useState(false);
@@ -174,19 +189,59 @@ export default function Ventas() {
   const ticketPromedio = cantidadVentasHoy > 0 ? totalVentasHoy / cantidadVentasHoy : 0;
   const ventasWhatsappHoy = ventas.filter((v) => v.canal === 'whatsapp').length;
 
-  const productoSeleccionado = productos.find((p) => p.id === nuevoVenta.productoId) || null;
   const montoCalculado = Math.max(
     0,
-    (parseFloat(nuevoVenta.precioUnitario) || 0) * (nuevoVenta.cantidad || 0) - (parseFloat(nuevoVenta.descuento) || 0)
+    nuevoVenta.items.reduce(
+      (sum, it) => sum + (parseFloat(it.precioUnitario) || 0) * (it.cantidad || 0),
+      0
+    ) - (parseFloat(nuevoVenta.descuento) || 0)
   );
 
-  const handleSeleccionarProducto = (productoId: string) => {
+  // Productos disponibles para elegir en una línea determinada: excluye los que ya
+  // fueron elegidos en otra línea de la misma venta, para no repetir un producto.
+  const productosDisponiblesPara = (index: number) => {
+    const usadosEnOtrasLineas = new Set(
+      nuevoVenta.items.filter((_, i) => i !== index).map((it) => it.productoId)
+    );
+    return productos.filter((p) => !usadosEnOtrasLineas.has(p.id));
+  };
+
+  const handleAgregarItem = () => {
+    setNuevoVenta((prev) => ({ ...prev, items: [...prev.items, crearItemVacio()] }));
+  };
+
+  const handleEliminarItem = (index: number) => {
+    setNuevoVenta((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }));
+  };
+
+  const handleCambiarProductoItem = (index: number, productoId: string) => {
     const producto = productos.find((p) => p.id === productoId);
-    setNuevoVenta({
-      ...nuevoVenta,
-      productoId,
-      precioUnitario: producto?.precioVenta != null ? String(producto.precioVenta) : nuevoVenta.precioUnitario,
-    });
+    setNuevoVenta((prev) => ({
+      ...prev,
+      items: prev.items.map((it, i) =>
+        i === index
+          ? {
+              ...it,
+              productoId,
+              precioUnitario: producto?.precioVenta != null ? String(producto.precioVenta) : it.precioUnitario,
+            }
+          : it
+      ),
+    }));
+  };
+
+  const handleCambiarCantidadItem = (index: number, cantidad: number) => {
+    setNuevoVenta((prev) => ({
+      ...prev,
+      items: prev.items.map((it, i) => (i === index ? { ...it, cantidad } : it)),
+    }));
+  };
+
+  const handleCambiarPrecioItem = (index: number, precioUnitario: string) => {
+    setNuevoVenta((prev) => ({
+      ...prev,
+      items: prev.items.map((it, i) => (i === index ? { ...it, precioUnitario } : it)),
+    }));
   };
 
   const handleSeleccionarCliente = (valor: string) => {
@@ -231,14 +286,29 @@ export default function Ventas() {
   };
 
   const handleRegistrarVenta = async () => {
-    if (!nuevoVenta.canal || !nuevoVenta.productoId || !nuevoVenta.cantidad || !nuevoVenta.fechaVenta) {
+    if (!nuevoVenta.canal || !nuevoVenta.fechaVenta) {
       toast.error('Por favor completa todos los campos requeridos');
       return;
     }
 
-    if (nuevoVenta.cantidad <= 0) {
-      toast.error('La cantidad debe ser mayor a 0');
+    if (nuevoVenta.items.length === 0) {
+      toast.error('Agrega al menos un producto o servicio');
       return;
+    }
+
+    for (const item of nuevoVenta.items) {
+      if (!item.productoId) {
+        toast.error('Selecciona un producto o servicio en cada línea');
+        return;
+      }
+      if (!item.cantidad || item.cantidad <= 0) {
+        toast.error('La cantidad debe ser mayor a 0 en cada línea');
+        return;
+      }
+      if (item.precioUnitario === '' || parseFloat(item.precioUnitario) < 0) {
+        toast.error('El precio unitario no puede ser negativo');
+        return;
+      }
     }
 
     if (parseFloat(nuevoVenta.descuento) < 0) {
@@ -247,7 +317,7 @@ export default function Ventas() {
     }
 
     if (montoCalculado <= 0) {
-      toast.error('El monto total debe ser mayor a 0. Revisa el precio unitario y el descuento.');
+      toast.error('El monto total debe ser mayor a 0. Revisa los precios y el descuento.');
       return;
     }
 
@@ -255,9 +325,12 @@ export default function Ventas() {
     try {
       const payload: any = {
         canal: nuevoVenta.canal,
-        productoId: nuevoVenta.productoId,
-        cantidad: nuevoVenta.cantidad,
-        monto: Number(montoCalculado.toFixed(2)),
+        items: nuevoVenta.items.map((it) => ({
+          productoId: it.productoId,
+          cantidad: it.cantidad,
+          precioUnitario: Number(parseFloat(it.precioUnitario).toFixed(2)) || 0
+        })),
+        descuento: Number((parseFloat(nuevoVenta.descuento) || 0).toFixed(2)),
         fechaVenta: nuevoVenta.fechaVenta,
       };
       if (nuevoVenta.clienteSeleccion !== CLIENTE_OCASIONAL) {
@@ -279,13 +352,14 @@ export default function Ventas() {
       }
 
       if (data.avisoStock) {
-        toast.warning('Venta registrada, pero el stock del producto quedó en negativo. Actualiza tu inventario.');
+        toast.warning('Venta registrada, pero el stock de algún producto quedó en negativo. Actualiza tu inventario.');
       } else {
         toast.success('Venta registrada correctamente');
       }
-      setNuevoVenta(NUEVA_VENTA_VACIA);
+      setNuevoVenta(crearVentaVacia());
       setShowRegistrarVenta(false);
       fetchVentas();
+      fetchProductos();
       fetchClientes();
     } catch (error) {
       toast.error('Error de conexión. Inténtalo nuevamente.');
@@ -298,7 +372,6 @@ export default function Ventas() {
     setEditingVenta(venta);
     setFormEdicion({
       canal: venta.canal,
-      monto: String(venta.monto),
       fechaVenta: venta.fechaVenta.split('T')[0],
       clienteSeleccion: venta.clienteId || CLIENTE_OCASIONAL,
     });
@@ -312,16 +385,10 @@ export default function Ventas() {
       return;
     }
 
-    if (!formEdicion.monto || Number(formEdicion.monto) <= 0) {
-      toast.error('El monto debe ser mayor a 0');
-      return;
-    }
-
     setGuardandoEdicion(true);
     try {
       const payload: any = {
         canal: formEdicion.canal,
-        monto: Number(formEdicion.monto),
         fechaVenta: formEdicion.fechaVenta,
         clienteId: formEdicion.clienteSeleccion === CLIENTE_OCASIONAL ? null : formEdicion.clienteSeleccion,
       };
@@ -367,6 +434,7 @@ export default function Ventas() {
       toast.success('Venta eliminada. El stock fue restituido.');
       setVentaAEliminar(null);
       fetchVentas();
+      fetchProductos();
     } catch (error) {
       toast.error('Error de conexión. Inténtalo nuevamente.');
     } finally {
@@ -374,9 +442,12 @@ export default function Ventas() {
     }
   };
 
+  const resumenItems = (venta: Venta) =>
+    venta.items.map((item) => `${item.cantidad}× ${item.producto.nombre}`).join(', ');
+
   const filteredVentas = ventas.filter((v) =>
     v.cliente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.producto.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+    v.items.some((item) => item.producto.nombre.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -436,6 +507,7 @@ export default function Ventas() {
       }
 
       fetchVentas();
+      fetchProductos();
       setCsvFile(null);
 
       if (data.erroresCount > 0) {
@@ -511,9 +583,8 @@ export default function Ventas() {
               <tr>
                 <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Fecha</th>
                 <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Cliente</th>
-                <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Producto</th>
+                <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Productos</th>
                 <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Canal</th>
-                <th className="px-4 py-3 text-right font-semibold text-[#0F6E56]">Cantidad</th>
                 <th className="px-4 py-3 text-right font-semibold text-[#0F6E56]">Monto</th>
                 <th className="px-4 py-3 text-center font-semibold text-[#0F6E56]">Acciones</th>
               </tr>
@@ -528,11 +599,18 @@ export default function Ventas() {
                     {new Date(venta.fechaVenta).toLocaleDateString('es-PE')}
                   </td>
                   <td className="px-4 py-3">{venta.cliente || 'Ocasional'}</td>
-                  <td className="px-4 py-3">{venta.producto.nombre}</td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-0.5">
+                      {venta.items.map((item) => (
+                        <div key={item.id} className="text-xs">
+                          {item.cantidad}× {item.producto.nombre}
+                        </div>
+                      ))}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground text-sm">
                     {canalLabels[venta.canal] || venta.canal}
                   </td>
-                  <td className="px-4 py-3 text-right">{venta.cantidad}</td>
                   <td className="px-4 py-3 text-right font-bold">S/ {venta.monto.toFixed(2)}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-1">
@@ -548,7 +626,7 @@ export default function Ventas() {
               ))}
               {filteredVentas.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                     No hay ventas registradas
                   </td>
                 </tr>
@@ -582,79 +660,103 @@ export default function Ventas() {
               </Select>
             </div>
 
-            {/* Producto */}
-            <div>
-              <Label htmlFor="producto" className="text-sm font-medium">Producto o servicio *</Label>
-              <Select value={nuevoVenta.productoId} onValueChange={handleSeleccionarProducto}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar producto o servicio" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productos.length === 0 ? (
-                    <SelectItem value="" disabled>No hay productos ni servicios registrados</SelectItem>
-                  ) : (
-                    productos.map((producto) => (
-                      <SelectItem key={producto.id} value={producto.id}>
-                        [{producto.codigo}] {producto.nombre} {producto.tipo === 'servicio' ? '(Servicio)' : `(stock: ${producto.stock})`}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+            {/* Productos (una o más líneas) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Productos y servicios *</Label>
+                <Button type="button" variant="outline" size="sm" onClick={handleAgregarItem} className="border-[#0F6E56] text-[#0F6E56] hover:bg-[#F0FAF6]">
+                  <Plus size={14} className="mr-1" />
+                  Agregar producto
+                </Button>
+              </div>
+
               {productos.length === 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground">
                   Primero registra productos o servicios en la sección Productos
                 </p>
               )}
+
+              {nuevoVenta.items.map((item, index) => {
+                const productoDeLinea = productos.find((p) => p.id === item.productoId) || null;
+                const subtotal = (parseFloat(item.precioUnitario) || 0) * (item.cantidad || 0);
+                return (
+                  <div key={index} className="rounded-lg border border-[#e5e5e3] p-3 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1">
+                        <Select value={item.productoId} onValueChange={(v) => handleCambiarProductoItem(index, v)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar producto o servicio" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {productosDisponiblesPara(index).length === 0 ? (
+                              <SelectItem value="" disabled>No hay más productos disponibles</SelectItem>
+                            ) : (
+                              productosDisponiblesPara(index).map((producto) => (
+                                <SelectItem key={producto.id} value={producto.id}>
+                                  [{producto.codigo}] {producto.nombre} {producto.tipo === 'servicio' ? '(Servicio)' : `(stock: ${producto.stock})`}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {nuevoVenta.items.length > 1 && (
+                        <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => handleEliminarItem(index)}>
+                          <Trash2 size={14} />
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs font-medium">Cantidad *</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={item.cantidad}
+                          onChange={(e) => handleCambiarCantidadItem(index, parseInt(e.target.value) || 1)}
+                          className="bg-white border-[#d5d5d2]"
+                        />
+                        {productoDeLinea && productoDeLinea.tipo === 'producto' && item.cantidad > productoDeLinea.stock && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            Stock disponible: {productoDeLinea.stock}. Dejará el stock en negativo.
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-xs font-medium">Precio unitario (S/) *</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.precioUnitario}
+                          onChange={(e) => handleCambiarPrecioItem(index, e.target.value)}
+                          className="bg-white border-[#d5d5d2]"
+                        />
+                      </div>
+                    </div>
+                    {productoDeLinea?.precioVenta == null && (
+                      <p className="text-xs text-muted-foreground">Este producto no tiene precio de venta guardado.</p>
+                    )}
+                    <p className="text-xs text-muted-foreground text-right">Subtotal: S/ {subtotal.toFixed(2)}</p>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Cantidad */}
+            {/* Descuento */}
             <div>
-              <Label htmlFor="cantidad" className="text-sm font-medium">Cantidad *</Label>
+              <Label htmlFor="descuento" className="text-sm font-medium">Descuento (S/, opcional)</Label>
               <Input
-                id="cantidad"
+                id="descuento"
                 type="number"
-                min="1"
-                value={nuevoVenta.cantidad}
-                onChange={(e) => setNuevoVenta({ ...nuevoVenta, cantidad: parseInt(e.target.value) || 1 })}
+                min="0"
+                step="0.01"
+                value={nuevoVenta.descuento}
+                onChange={(e) => setNuevoVenta({ ...nuevoVenta, descuento: e.target.value })}
                 className="bg-white border-[#d5d5d2]"
               />
-              {productoSeleccionado && productoSeleccionado.tipo === 'producto' && nuevoVenta.cantidad > productoSeleccionado.stock && (
-                <p className="text-xs text-amber-600 mt-1">
-                  Stock disponible: {productoSeleccionado.stock}. Esta venta dejará el stock en negativo.
-                </p>
-              )}
-            </div>
-
-            {/* Precio unitario + descuento */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="precioUnitario" className="text-sm font-medium">Precio unitario (S/) *</Label>
-                <Input
-                  id="precioUnitario"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={nuevoVenta.precioUnitario}
-                  onChange={(e) => setNuevoVenta({ ...nuevoVenta, precioUnitario: e.target.value })}
-                  className="bg-white border-[#d5d5d2]"
-                />
-                {productoSeleccionado?.precioVenta == null && (
-                  <p className="text-xs text-muted-foreground mt-1">Este producto no tiene precio de venta guardado.</p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="descuento" className="text-sm font-medium">Descuento (S/, opcional)</Label>
-                <Input
-                  id="descuento"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={nuevoVenta.descuento}
-                  onChange={(e) => setNuevoVenta({ ...nuevoVenta, descuento: e.target.value })}
-                  className="bg-white border-[#d5d5d2]"
-                />
-              </div>
+              <p className="text-xs text-muted-foreground mt-1">Se aplica una sola vez sobre el total de la venta.</p>
             </div>
 
             {/* Monto calculado */}
@@ -758,8 +860,8 @@ export default function Ventas() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-xs text-muted-foreground">
-              Producto: <strong>{editingVenta?.producto.nombre}</strong> · Cantidad: <strong>{editingVenta?.cantidad}</strong>.
-              Para cambiar el producto o la cantidad, elimina esta venta y regístrala nuevamente.
+              Productos: <strong>{editingVenta ? resumenItems(editingVenta) : ''}</strong> · Monto: <strong>S/ {editingVenta?.monto.toFixed(2)}</strong>.
+              Para cambiar los productos, las cantidades o el monto, elimina esta venta y regístrala nuevamente.
             </p>
             <div>
               <Label className="text-sm font-medium">Canal de venta *</Label>
@@ -773,16 +875,6 @@ export default function Ventas() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <Label className="text-sm font-medium">Monto total (S/) *</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formEdicion.monto}
-                onChange={(e) => setFormEdicion({ ...formEdicion, monto: e.target.value })}
-              />
             </div>
             <div>
               <Label className="text-sm font-medium">Fecha de venta *</Label>
@@ -823,8 +915,8 @@ export default function Ventas() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar esta venta?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará la venta de "{ventaAEliminar?.producto.nombre}" por S/ {ventaAEliminar?.monto.toFixed(2)}.
-              {ventaAEliminar?.producto.tipo === 'producto' && ' El stock vendido será restituido automáticamente.'}
+              Se eliminará la venta de {ventaAEliminar ? resumenItems(ventaAEliminar) : ''} por S/ {ventaAEliminar?.monto.toFixed(2)}.
+              {ventaAEliminar?.items.some((item) => item.producto.tipo === 'producto') && ' El stock vendido será restituido automáticamente.'}
               {' '}Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -905,6 +997,10 @@ whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
                 <li>fecha_venta: formato YYYY-MM-DD (ej. 2026-01-28)</li>
                 <li>cliente: nombre del cliente (opcional)</li>
               </ul>
+              <p className="text-xs text-muted-foreground">
+                Cada fila de la carga masiva registra una venta de un solo producto. Si necesitas registrar
+                una venta con varios productos a la vez, hazlo desde el botón "Registrar venta".
+              </p>
             </div>
 
             {/* Preview Table */}

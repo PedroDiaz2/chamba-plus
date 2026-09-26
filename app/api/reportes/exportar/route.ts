@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       nombreArchivo = 'reporte_ventas';
       const ventas = await prisma.venta.findMany({
         where,
-        include: { producto: true },
+        include: { items: { include: { producto: true } } },
         orderBy: { fechaVenta: 'desc' }
       });
 
@@ -67,19 +67,20 @@ export async function POST(request: NextRequest) {
           { key: 'monto', label: 'Monto' },
           { key: 'cliente', label: 'Cliente' }
         ],
-        filas: ventas.map((v) => ({
+        filas: ventas.flatMap((v) => v.items.map((item) => ({
           fecha: v.fechaVenta.toLocaleDateString('es-PE'),
           canal: v.canal,
-          item: v.producto.nombre,
-          cantidad: v.cantidad,
-          monto: Number(v.monto.toFixed(2)),
+          item: item.producto.nombre,
+          cantidad: item.cantidad,
+          monto: Number(item.monto.toFixed(2)),
           cliente: v.cliente || 'Ocasional'
-        }))
+        })))
       }];
     } else if (tipo === 'kpi') {
       titulo = 'Reporte de KPIs';
       nombreArchivo = 'reporte_kpis';
-      const ventas = await prisma.venta.findMany({ where, include: { producto: true } });
+      const ventas = await prisma.venta.findMany({ where, include: { items: { include: { producto: true } } } });
+      const items = ventas.flatMap((v) => v.items);
 
       const totalVentas = ventas.reduce((sum, v) => sum + v.monto, 0);
       const cantidadVentas = ventas.length;
@@ -90,8 +91,8 @@ export async function POST(request: NextRequest) {
         return acc;
       }, {} as Record<string, number>);
 
-      const productosTop = ventas.reduce((acc, v) => {
-        acc[v.producto.nombre] = (acc[v.producto.nombre] || 0) + v.cantidad;
+      const productosTop = items.reduce((acc, item) => {
+        acc[item.producto.nombre] = (acc[item.producto.nombre] || 0) + item.cantidad;
         return acc;
       }, {} as Record<string, number>);
 
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
       nombreArchivo = 'reporte_productos';
       const productos = await prisma.producto.findMany({
         where: { negocioId },
-        include: { ventas: { where, select: { cantidad: true, monto: true } } }
+        include: { ventaItems: { where: { venta: where }, select: { cantidad: true, monto: true } } }
       });
 
       secciones = [{
@@ -140,8 +141,8 @@ export async function POST(request: NextRequest) {
           nombre: p.nombre,
           tipo: p.tipo === 'servicio' ? 'Servicio' : 'Producto',
           categoria: p.categoria || 'Sin categoría',
-          cantidadVendida: p.ventas.reduce((sum, v) => sum + v.cantidad, 0),
-          montoTotal: Number(p.ventas.reduce((sum, v) => sum + v.monto, 0).toFixed(2))
+          cantidadVendida: p.ventaItems.reduce((sum, item) => sum + item.cantidad, 0),
+          montoTotal: Number(p.ventaItems.reduce((sum, item) => sum + item.monto, 0).toFixed(2))
         }))
       }];
     } else if (tipo === 'clientes') {

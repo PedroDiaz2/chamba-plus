@@ -16,6 +16,9 @@ __v0_jsx-dev-runtime.ts
 # Office lock files
 ~$*
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # Common ignores
 node_modules
 .next/

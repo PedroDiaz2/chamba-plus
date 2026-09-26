@@ -125,7 +125,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     const producto = await prisma.producto.findFirst({
       where: { id, negocioId },
-      include: { _count: { select: { ventas: true } } }
+      include: { _count: { select: { ventaItems: true } } }
     });
 
     if (!producto) {
@@ -135,9 +135,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       );
     }
 
-    if (producto._count.ventas > 0) {
+    if (producto._count.ventaItems > 0) {
       return NextResponse.json(
-        { error: `No se puede eliminar "${producto.nombre}" porque tiene ${producto._count.ventas} venta(s) registrada(s).` },
+        { error: `No se puede eliminar "${producto.nombre}" porque tiene ${producto._count.ventaItems} venta(s) registrada(s).` },
         { status: 409 }
       );
     }

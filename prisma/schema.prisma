@@ -89,7 +89,7 @@ model Producto {
   precioCosto  Float?
   negocioId    String
   negocio      Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
-  ventas       Venta[]
+  ventaItems   VentaItem[]
   movimientos  MovimientoInventario[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -118,20 +118,31 @@ model Cliente {
 model Venta {
   id          String      @id @default(cuid())
   canal       CanalVenta
-  cantidad    Int
   monto       Float
+  descuento   Float       @default(0)
   fechaVenta  DateTime
   cliente     String?
   clienteId   String?
   origenCarga OrigenCarga @default(manual)
   negocioId   String
   negocio     Negocio     @relation(fields: [negocioId], references: [id], onDelete: Cascade)
-  productoId  String
-  producto    Producto    @relation(fields: [productoId], references: [id], onDelete: Restrict)
   clienteRel  Cliente?    @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  items       VentaItem[]
   movimientos MovimientoInventario[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+}
+
+model VentaItem {
+  id             String   @id @default(cuid())
+  ventaId        String
+  venta          Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  productoId     String
+  producto       Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  cantidad       Int
+  precioUnitario Float
+  monto          Float
+  createdAt      DateTime @default(now())
 }
 
 model MovimientoInventario {

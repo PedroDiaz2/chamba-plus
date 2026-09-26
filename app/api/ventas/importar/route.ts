@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { CanalVenta, OrigenCarga } from '@prisma/client';
-import { registrarVentaConStock, ProductoStockInfo } from '@/lib/ventas-service';
+import { registrarVentaConStock } from '@/lib/ventas-service';
 import { parsearFechaLocal, esFechaFutura } from '@/lib/fechas';
 
 export async function POST(request: NextRequest) {
@@ -28,11 +28,11 @@ export async function POST(request: NextRequest) {
     // Obtener productos del negocio para validar
     const productos = await prisma.producto.findMany({
       where: { negocioId },
-      select: { id: true, nombre: true, tipo: true, stock: true, stockMinimo: true }
+      select: { id: true, nombre: true }
     });
 
-    const productoMap = new Map<string, ProductoStockInfo>(
-      productos.map(p => [p.nombre.toLowerCase(), { id: p.id, tipo: p.tipo, stock: p.stock, stockMinimo: p.stockMinimo }])
+    const productoMap = new Map<string, { id: string }>(
+      productos.map(p => [p.nombre.toLowerCase(), { id: p.id }])
     );
 
     const errores: string[] = [];
@@ -90,21 +90,16 @@ export async function POST(request: NextRequest) {
         }
 
         // Crear venta y aplicar sus efectos en cascada (stock, cliente, alertas)
-        const { venta: ventaCreada, stockResultante } = await prisma.$transaction((tx) =>
-          registrarVentaConStock(tx, productoInfo, {
+        const { venta: ventaCreada } = await prisma.$transaction((tx) =>
+          registrarVentaConStock(tx, {
             negocioId,
             canal: venta.canal as CanalVenta,
-            productoId: productoInfo.id,
-            cantidad,
-            monto,
+            items: [{ productoId: productoInfo.id, cantidad, precioUnitario: monto / cantidad }],
             fechaVenta,
             cliente: venta.cliente || null,
             origenCarga: OrigenCarga.importacion
           })
         );
-
-        // Reflejar el nuevo stock en el mapa para filas siguientes del mismo producto
-        productoInfo.stock = stockResultante;
 
         ventasCreadas.push(ventaCreada);
       } catch (error) {

@@ -4,19 +4,17 @@ import { siguienteCodigo } from './codigos';
 
 type TxClient = Prisma.TransactionClient;
 
-export interface ProductoStockInfo {
-  id: string;
-  tipo: TipoProducto;
-  stock: number;
-  stockMinimo: number;
+export interface ItemVentaInput {
+  productoId: string;
+  cantidad: number;
+  precioUnitario: number;
 }
 
 export interface RegistrarVentaParams {
   negocioId: string;
   canal: CanalVenta;
-  productoId: string;
-  cantidad: number;
-  monto: number;
+  items: ItemVentaInput[];
+  descuento?: number;
   fechaVenta: Date;
   cliente?: string | null;
   clienteId?: string | null;
@@ -24,16 +22,15 @@ export interface RegistrarVentaParams {
 }
 
 export interface RegistrarVentaResult {
-  venta: Prisma.VentaGetPayload<{ include: { producto: true } }>;
-  stockResultante: number;
+  venta: Prisma.VentaGetPayload<{ include: { items: { include: { producto: true } } } }>;
   avisoStock: boolean;
 }
 
-// Crea la venta y aplica sus efectos en cascada: resuelve/crea el cliente,
-// descuenta stock del producto y deja un movimiento de inventario trazable.
+// Crea la venta (con una o más líneas de producto/servicio) y aplica sus efectos
+// en cascada: resuelve/crea el cliente, descuenta stock de cada producto vendido
+// y deja un movimiento de inventario trazable por cada línea.
 export async function registrarVentaConStock(
   tx: TxClient,
-  producto: ProductoStockInfo,
   params: RegistrarVentaParams
 ): Promise<RegistrarVentaResult> {
   let clienteId: string | null = null;
@@ -66,53 +63,70 @@ export async function registrarVentaConStock(
     }
   }
 
+  const descuento = params.descuento ?? 0;
+  const montoBruto = params.items.reduce((sum, it) => sum + it.cantidad * it.precioUnitario, 0);
+  const montoTotal = Math.max(0, montoBruto - descuento);
+
   const venta = await tx.venta.create({
     data: {
       negocioId: params.negocioId,
       canal: params.canal,
-      productoId: params.productoId,
-      cantidad: params.cantidad,
-      monto: params.monto,
+      monto: montoTotal,
+      descuento,
       fechaVenta: params.fechaVenta,
       cliente: nombreCliente,
       clienteId,
-      origenCarga: params.origenCarga
+      origenCarga: params.origenCarga,
+      items: {
+        create: params.items.map((it) => ({
+          productoId: it.productoId,
+          cantidad: it.cantidad,
+          precioUnitario: it.precioUnitario,
+          monto: it.cantidad * it.precioUnitario
+        }))
+      }
     },
-    include: { producto: true }
+    include: { items: { include: { producto: true } } }
   });
 
-  // Los servicios no manejan inventario: no hay stock que descontar ni movimiento que registrar.
-  if (producto.tipo === TipoProducto.servicio) {
-    return { venta, stockResultante: producto.stock, avisoStock: false };
+  let avisoStock = false;
+
+  for (const item of venta.items) {
+    // Los servicios no manejan inventario: no hay stock que descontar ni movimiento que registrar.
+    if (item.producto.tipo === TipoProducto.servicio) continue;
+
+    // Se usa un decremento atómico (en vez de leer-y-escribir stockPrevio/stockResultante
+    // a mano) para que quede correctamente resuelto incluso si el mismo producto aparece
+    // en más de una línea de esta misma venta.
+    const productoActualizado = await tx.producto.update({
+      where: { id: item.productoId },
+      data: { stock: { decrement: item.cantidad } }
+    });
+    const stockResultante = productoActualizado.stock;
+    const stockPrevio = stockResultante + item.cantidad;
+
+    await tx.movimientoInventario.create({
+      data: {
+        productoId: item.productoId,
+        negocioId: params.negocioId,
+        tipo: TipoMovimiento.venta,
+        cantidad: -item.cantidad,
+        stockResultante,
+        ventaId: venta.id
+      }
+    });
+
+    await generarAlertaStockSiCorresponde(tx, {
+      negocioId: params.negocioId,
+      productoId: item.productoId,
+      nombreProducto: item.producto.nombre,
+      stockPrevio,
+      stockResultante,
+      stockMinimo: item.producto.stockMinimo
+    });
+
+    if (stockResultante < 0) avisoStock = true;
   }
 
-  const stockPrevio = producto.stock;
-  const stockResultante = stockPrevio - params.cantidad;
-
-  await tx.producto.update({
-    where: { id: producto.id },
-    data: { stock: stockResultante }
-  });
-
-  await tx.movimientoInventario.create({
-    data: {
-      productoId: producto.id,
-      negocioId: params.negocioId,
-      tipo: TipoMovimiento.venta,
-      cantidad: -params.cantidad,
-      stockResultante,
-      ventaId: venta.id
-    }
-  });
-
-  await generarAlertaStockSiCorresponde(tx, {
-    negocioId: params.negocioId,
-    productoId: producto.id,
-    nombreProducto: venta.producto.nombre,
-    stockPrevio,
-    stockResultante,
-    stockMinimo: producto.stockMinimo
-  });
-
-  return { venta, stockResultante, avisoStock: stockResultante < 0 };
+  return { venta, avisoStock };
 }

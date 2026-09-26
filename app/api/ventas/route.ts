@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { CanalVenta, OrigenCarga } from '@prisma/client';
-import { registrarVentaConStock } from '@/lib/ventas-service';
+import { registrarVentaConStock, ItemVentaInput } from '@/lib/ventas-service';
 import { parsearFechaLocal, esFechaFutura } from '@/lib/fechas';
 
 export async function GET(request: NextRequest) {
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const ventas = await prisma.venta.findMany({
       where,
       include: {
-        producto: true
+        items: { include: { producto: true } }
       },
       orderBy: { fechaVenta: 'desc' }
     });
@@ -63,21 +63,41 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { canal, productoId, cantidad, monto, fechaVenta, cliente, clienteId } = body;
+    const { canal, items, descuento, fechaVenta, cliente, clienteId } = body;
 
     // Validaciones básicas
-    if (!canal || !productoId || !cantidad || !monto || !fechaVenta) {
+    if (!canal || !Array.isArray(items) || items.length === 0 || !fechaVenta) {
       return NextResponse.json(
         { error: 'Todos los campos requeridos deben estar completos' },
         { status: 400 }
       );
     }
 
-    if (cantidad <= 0 || monto <= 0) {
+    const descuentoFinal = descuento !== undefined && descuento !== null ? Number(descuento) : 0;
+    if (!Number.isFinite(descuentoFinal) || descuentoFinal < 0) {
       return NextResponse.json(
-        { error: 'La cantidad y el monto deben ser mayores a 0' },
+        { error: 'El descuento no puede ser negativo' },
         { status: 400 }
       );
+    }
+
+    const itemsValidados: ItemVentaInput[] = [];
+    for (const item of items) {
+      const cantidad = Number(item?.cantidad);
+      const precioUnitario = Number(item?.precioUnitario);
+      if (!item?.productoId || !Number.isFinite(cantidad) || cantidad <= 0) {
+        return NextResponse.json(
+          { error: 'Cada producto de la venta debe tener una cantidad mayor a 0' },
+          { status: 400 }
+        );
+      }
+      if (!Number.isFinite(precioUnitario) || precioUnitario < 0) {
+        return NextResponse.json(
+          { error: 'El precio unitario de cada producto no puede ser negativo' },
+          { status: 400 }
+        );
+      }
+      itemsValidados.push({ productoId: item.productoId, cantidad, precioUnitario });
     }
 
     // Validar que la fecha no sea futura
@@ -89,17 +109,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar que el producto pertenezca al negocio
-    const producto = await prisma.producto.findFirst({
-      where: {
-        id: productoId,
-        negocioId
-      }
+    // Verificar que todos los productos pertenezcan al negocio
+    const productoIds = Array.from(new Set(itemsValidados.map((it) => it.productoId)));
+    const productos = await prisma.producto.findMany({
+      where: { id: { in: productoIds }, negocioId }
     });
 
-    if (!producto) {
+    if (productos.length !== productoIds.length) {
       return NextResponse.json(
-        { error: 'Producto no encontrado' },
+        { error: 'Uno o más productos no fueron encontrados' },
         { status: 404 }
       );
     }
@@ -119,12 +137,11 @@ export async function POST(request: NextRequest) {
 
     // Crear venta y aplicar sus efectos en cascada (stock, cliente, alertas)
     const { venta, avisoStock } = await prisma.$transaction((tx) =>
-      registrarVentaConStock(tx, producto, {
+      registrarVentaConStock(tx, {
         negocioId,
         canal: canal as CanalVenta,
-        productoId,
-        cantidad,
-        monto,
+        items: itemsValidados,
+        descuento: descuentoFinal,
         fechaVenta: fechaVentaDate,
         cliente,
         clienteId,
