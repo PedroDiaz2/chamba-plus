@@ -1,6 +1,7 @@
 import { prisma } from './prisma';
 import { CanalVenta, TipoProducto } from '@prisma/client';
 import { claveCanal, whereParaClaveCanal } from './canales';
+import { calcularPeriodoAnterior } from './fechas';
 
 interface KPIFilters {
   fechaInicio?: Date;
@@ -85,14 +86,16 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
         .filter(v => claveCanal(v.canal, v.canalPersonalizadoId) === canalKey)
         .reduce((sum, v) => sum + v.monto, 0);
 
-      // Calcular periodo anterior (misma duración)
+      // Calcular periodo anterior: mes calendario completo previo si el rango
+      // filtrado es un mes calendario completo, o la misma cantidad de días
+      // inmediatamente antes en cualquier otro caso (ver calcularPeriodoAnterior).
       let fechaInicioAnterior: Date;
       let fechaFinAnterior: Date;
 
       if (fechaInicio && fechaFin) {
-        const duracion = fechaFin.getTime() - fechaInicio.getTime();
-        fechaFinAnterior = new Date(fechaInicio.getTime() - 1);
-        fechaInicioAnterior = new Date(fechaFinAnterior.getTime() - duracion);
+        const anterior = calcularPeriodoAnterior(fechaInicio, fechaFin);
+        fechaInicioAnterior = anterior.inicio;
+        fechaFinAnterior = anterior.fin;
       } else {
         // Por defecto: último mes vs mes anterior
         const hoy = new Date();
@@ -180,9 +183,7 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
   let variacionPeriodos: { periodoActual: string; periodoAnterior: string; variacion: number }[] = [];
 
   if (fechaInicio && fechaFin) {
-    const duracion = fechaFin.getTime() - fechaInicio.getTime();
-    const fechaFinAnterior = new Date(fechaInicio.getTime() - 1);
-    const fechaInicioAnterior = new Date(fechaFinAnterior.getTime() - duracion);
+    const { inicio: fechaInicioAnterior, fin: fechaFinAnterior } = calcularPeriodoAnterior(fechaInicio, fechaFin);
 
     const ventasPeriodoAnterior = await prisma.venta.findMany({
       where: {
