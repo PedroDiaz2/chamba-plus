@@ -11,6 +11,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
@@ -228,8 +229,8 @@ export default function Dashboard() {
   }));
 
   const clientesNuevosVsRecurrentes = [
-    { name: 'Nuevos (este periodo)', value: kpis.clientes.clientesNuevos, fill: '#1D9E75' },
-    { name: 'Recurrentes', value: kpis.clientes.clientesRecurrentes, fill: '#7F77DD' },
+    { name: 'Nuevos en este periodo', value: kpis.clientes.clientesNuevos, fill: '#1D9E75' },
+    { name: 'Recurrentes (historial total)', value: kpis.clientes.clientesRecurrentes, fill: '#7F77DD' },
   ];
 
   return (
@@ -355,12 +356,13 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground mb-4">¿En qué canal debo enfocar esfuerzo o inversión?</p>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={participacionChartData} cx="50%" cy="50%" labelLine={false} label={(entry) => `${entry.name}: ${entry.value.toFixed(1)}%`}>
+                <Pie data={participacionChartData} dataKey="value" cx="38%" cy="50%" outerRadius={95} labelLine={false}>
                   {participacionChartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 13 }} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -522,15 +524,19 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="bg-white border-t-4" style={{ borderTopColor: '#1D9E75' }}>
             <CardContent className="pt-6">
-              <h4 className="text-md font-semibold text-[#0F6E56] mb-4">Clientes nuevos vs. recurrentes</h4>
+              <h4 className="text-md font-semibold text-[#0F6E56] mb-1">Clientes nuevos vs. recurrentes</h4>
+              <p className="text-xs text-muted-foreground mb-4">
+                Dos miradas distintas, no partes de un mismo total: "nuevos" mide cuándo se registraron; "recurrentes" mide cuántas veces te compraron en todo su historial. Un mismo cliente puede contarse en ambas, o en ninguna.
+              </p>
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
-                  <Pie data={clientesNuevosVsRecurrentes} cx="50%" cy="50%" labelLine={false} label={(entry) => `${entry.name}: ${entry.value}`}>
+                  <Pie data={clientesNuevosVsRecurrentes} dataKey="value" cx="38%" cy="50%" outerRadius={80} labelLine={false}>
                     {clientesNuevosVsRecurrentes.map((entry, index) => (
                       <Cell key={`cell-cliente-${index}`} fill={entry.fill} />
                     ))}
                   </Pie>
                   <Tooltip />
+                  <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 13 }} />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>

@@ -277,7 +277,10 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
 
   const totalClientes = clientes.length;
   const inicioMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const clientesNuevos = clientes.filter((c) => c.createdAt >= (fechaInicio || inicioMesActual)).length;
+  const inicioNuevos = fechaInicio || inicioMesActual;
+  // Si se eligió un rango con fecha de fin (un periodo pasado), se respeta
+  // tambien ese limite superior; si no, se cuenta hasta hoy (como antes).
+  const clientesNuevos = clientes.filter((c) => c.createdAt >= inicioNuevos && (!fechaFin || c.createdAt <= fechaFin)).length;
   const clientesConVentas = clientes.map((c) => ({
     nombre: c.nombre,
     compras: c.ventas.length,
