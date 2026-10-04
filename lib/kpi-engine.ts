@@ -1,5 +1,6 @@
 import { prisma } from './prisma';
 import { CanalVenta, TipoProducto } from '@prisma/client';
+import { claveCanal, whereParaClaveCanal } from './canales';
 
 interface KPIFilters {
   fechaInicio?: Date;
@@ -56,13 +57,16 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
   // por producto/servicio (top por canal, inventario, margen), mientras que `ventas`
   // (a nivel de transacción) se usa para los KPIs que son por venta (participación,
   // ticket promedio, frecuencia de compra, variación de periodos).
+  // El campo "canal" aquí ya es la clave compuesta (ver lib/canales.ts): cada canal
+  // personalizado (ej. "Rappi") se trata como su propio canal, no se agrupa bajo "otro".
   const itemsConVenta = ventas.flatMap((v) =>
-    v.items.map((item) => ({ ...item, canal: v.canal, fechaVenta: v.fechaVenta }))
+    v.items.map((item) => ({ ...item, canal: claveCanal(v.canal, v.canalPersonalizadoId), fechaVenta: v.fechaVenta }))
   );
 
   // 1. Participación de ventas por canal (%)
   const ventasPorCanal = ventas.reduce((acc, v) => {
-    acc[v.canal] = (acc[v.canal] || 0) + v.monto;
+    const clave = claveCanal(v.canal, v.canalPersonalizadoId);
+    acc[clave] = (acc[clave] || 0) + v.monto;
     return acc;
   }, {} as Record<string, number>);
 
@@ -78,7 +82,7 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
   const variacionPorCanal = await Promise.all(
     Object.keys(ventasPorCanal).map(async (canalKey) => {
       const ventasCanalActual = ventas
-        .filter(v => v.canal === canalKey)
+        .filter(v => claveCanal(v.canal, v.canalPersonalizadoId) === canalKey)
         .reduce((sum, v) => sum + v.monto, 0);
 
       // Calcular periodo anterior (misma duración)
@@ -99,7 +103,7 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
       const ventasCanalAnterior = await prisma.venta.findMany({
         where: {
           negocioId,
-          canal: canalKey as CanalVenta,
+          ...whereParaClaveCanal(canalKey),
           fechaVenta: {
             gte: fechaInicioAnterior,
             lte: fechaFinAnterior
@@ -145,7 +149,8 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
 
   // 4. Ticket promedio por canal
   const ventasPorCanalCount = ventas.reduce((acc, v) => {
-    acc[v.canal] = (acc[v.canal] || 0) + 1;
+    const clave = claveCanal(v.canal, v.canalPersonalizadoId);
+    acc[clave] = (acc[clave] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
@@ -156,11 +161,12 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
 
   // 5. Frecuencia de compra por canal/cliente
   const clientesPorCanal = ventas.reduce((acc, v) => {
-    if (!acc[v.canal]) {
-      acc[v.canal] = new Set();
+    const clave = claveCanal(v.canal, v.canalPersonalizadoId);
+    if (!acc[clave]) {
+      acc[clave] = new Set();
     }
     if (v.cliente) {
-      acc[v.canal].add(v.cliente);
+      acc[clave].add(v.cliente);
     }
     return acc;
   }, {} as Record<string, Set<string>>);
@@ -284,7 +290,10 @@ export async function calcularKPIs(negocioId: string, filters: KPIFilters = {}):
   const topClientes = [...clientesConVentas].sort((a, b) => b.totalGastado - a.totalGastado).slice(0, 5);
 
   const canalPreferidoCount = clientes.reduce((acc, c) => {
-    if (c.canalPreferido) acc[c.canalPreferido] = (acc[c.canalPreferido] || 0) + 1;
+    if (c.canalPreferido) {
+      const clave = claveCanal(c.canalPreferido, c.canalPreferidoPersonalizadoId);
+      acc[clave] = (acc[clave] || 0) + 1;
+    }
     return acc;
   }, {} as Record<string, number>);
   const clientesPorCanalPreferido = Object.entries(canalPreferidoCount).map(([canal, cantidad]) => ({ canal, cantidad }));

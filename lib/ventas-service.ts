@@ -13,6 +13,7 @@ export interface ItemVentaInput {
 export interface RegistrarVentaParams {
   negocioId: string;
   canal: CanalVenta;
+  canalPersonalizadoId?: string | null;
   items: ItemVentaInput[];
   descuento?: number;
   fechaVenta: Date;
@@ -22,7 +23,7 @@ export interface RegistrarVentaParams {
 }
 
 export interface RegistrarVentaResult {
-  venta: Prisma.VentaGetPayload<{ include: { items: { include: { producto: true } } } }>;
+  venta: Prisma.VentaGetPayload<{ include: { items: { include: { producto: true } }, canalPersonalizado: true } }>;
   avisoStock: boolean;
 }
 
@@ -56,7 +57,8 @@ export async function registrarVentaConStock(
           negocioId: params.negocioId,
           codigo: siguienteCodigo(codigosExistentes.map((c) => c.codigo), 'CL'),
           nombre: nombreCliente,
-          canalPreferido: params.canal
+          canalPreferido: params.canal,
+          canalPreferidoPersonalizadoId: params.canalPersonalizadoId ?? null
         }
       });
       clienteId = nuevoCliente.id;
@@ -71,6 +73,7 @@ export async function registrarVentaConStock(
     data: {
       negocioId: params.negocioId,
       canal: params.canal,
+      canalPersonalizadoId: params.canal === CanalVenta.otro ? (params.canalPersonalizadoId ?? null) : null,
       monto: montoTotal,
       descuento,
       fechaVenta: params.fechaVenta,
@@ -86,7 +89,7 @@ export async function registrarVentaConStock(
         }))
       }
     },
-    include: { items: { include: { producto: true } } }
+    include: { items: { include: { producto: true } }, canalPersonalizado: true }
   });
 
   let avisoStock = false;

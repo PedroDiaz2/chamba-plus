@@ -35,6 +35,16 @@ export async function POST(request: NextRequest) {
       productos.map(p => [p.nombre.toLowerCase(), { id: p.id }])
     );
 
+    // Obtener canales personalizados activos del negocio, para que el CSV pueda
+    // usar directamente su nombre (ej. "Rappi") en la columna "canal"
+    const canalesPersonalizados = await prisma.canalPersonalizado.findMany({
+      where: { negocioId, activo: true },
+      select: { id: true, nombre: true }
+    });
+    const canalPersonalizadoMap = new Map<string, { id: string }>(
+      canalesPersonalizados.map(c => [c.nombre.toLowerCase(), { id: c.id }])
+    );
+
     const errores: string[] = [];
     const ventasCreadas: any[] = [];
 
@@ -49,10 +59,23 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Validar canal
-        if (!Object.values(CanalVenta).includes(venta.canal)) {
-          errores.push(`Línea ${linea}: Canal inválido. Valores válidos: ${Object.values(CanalVenta).join(', ')}`);
-          continue;
+        // Validar canal: debe ser uno de los canales fijos, o el nombre exacto
+        // de uno de los canales personalizados activos del negocio (ej. "Rappi")
+        const canalRaw = String(venta.canal).trim();
+        const canalesFijos: CanalVenta[] = Object.values(CanalVenta).filter((c) => c !== CanalVenta.otro);
+        let canalFinal: CanalVenta;
+        let canalPersonalizadoId: string | null = null;
+
+        if (canalesFijos.includes(canalRaw as CanalVenta)) {
+          canalFinal = canalRaw as CanalVenta;
+        } else {
+          const canalPersonalizado = canalPersonalizadoMap.get(canalRaw.toLowerCase());
+          if (!canalPersonalizado) {
+            errores.push(`Línea ${linea}: Canal inválido "${venta.canal}". Valores válidos: ${canalesFijos.join(', ')}, o el nombre de uno de tus canales personalizados.`);
+            continue;
+          }
+          canalFinal = CanalVenta.otro;
+          canalPersonalizadoId = canalPersonalizado.id;
         }
 
         // Validar cantidad y monto
@@ -93,7 +116,8 @@ export async function POST(request: NextRequest) {
         const { venta: ventaCreada } = await prisma.$transaction((tx) =>
           registrarVentaConStock(tx, {
             negocioId,
-            canal: venta.canal as CanalVenta,
+            canal: canalFinal,
+            canalPersonalizadoId,
             items: [{ productoId: productoInfo.id, cantidad, precioUnitario: monto / cantidad }],
             fechaVenta,
             cliente: venta.cliente || null,

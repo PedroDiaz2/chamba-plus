@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download, FileText, BarChart3, Package, Users, Boxes } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,10 +24,9 @@ const CANAL_LABELS: Record<string, string> = {
   facebook: 'Facebook',
   tiktok: 'TikTok',
   marketplace: 'Marketplace',
-  otro: 'Otro',
 };
 
-const CANAL_OPTIONS = Object.entries(CANAL_LABELS).map(([id, label]) => ({ id, label }));
+const PREFIJO_CANAL_PERSONALIZADO = 'otro:';
 
 const REPORT_TYPES = [
   { id: 'ventas', name: 'Reporte de Ventas', icon: FileText, description: 'Detalle de todas las ventas' },
@@ -137,6 +136,24 @@ export default function Reportes() {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [loading, setLoading] = useState(false);
+  const [canalLabelsExtra, setCanalLabelsExtra] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetch('/api/canales-personalizados')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data?.canalesPersonalizados) return;
+        const labels: Record<string, string> = {};
+        (data.canalesPersonalizados as { id: string; nombre: string; activo: boolean }[])
+          .filter((cp) => cp.activo)
+          .forEach((cp) => { labels[`${PREFIJO_CANAL_PERSONALIZADO}${cp.id}`] = cp.nombre; });
+        setCanalLabelsExtra(labels);
+      })
+      .catch(() => {});
+  }, []);
+
+  const canalLabels = { ...CANAL_LABELS, ...canalLabelsExtra };
+  const CANAL_OPTIONS = Object.entries(canalLabels).map(([id, label]) => ({ id, label }));
 
   const handleExportar = async () => {
     setLoading(true);
@@ -292,7 +309,7 @@ export default function Reportes() {
               <p className="text-sm text-muted-foreground mb-2">{reporteSeleccionado?.description}</p>
               <div className="text-xs text-muted-foreground space-y-1">
                 <p><strong>Formato:</strong> {FORMATOS.find((f) => f.id === formato)?.label}</p>
-                <p><strong>Canal:</strong> {canal === 'todos' ? 'Todos' : CANAL_LABELS[canal]}</p>
+                <p><strong>Canal:</strong> {canal === 'todos' ? 'Todos' : canalLabels[canal]}</p>
                 <p><strong>Rango de fechas:</strong> {fechaInicio && fechaFin ? `${fechaInicio} a ${fechaFin}` : 'Todo el historial'}</p>
               </div>
             </div>

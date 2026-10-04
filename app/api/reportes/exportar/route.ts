@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { TipoProducto } from '@prisma/client';
 import { parsearFechaLocal } from '@/lib/fechas';
+import { claveCanal, whereParaClaveCanal, esClaveCanalPersonalizado, idDesdeClaveCanal } from '@/lib/canales';
+
+const CANAL_LABELS: Record<string, string> = {
+  tienda_fisica: 'Tienda física',
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  tiktok: 'TikTok',
+  marketplace: 'Marketplace'
+};
 
 interface Columna {
   key: string;
@@ -36,13 +46,26 @@ export async function POST(request: NextRequest) {
     }
 
     const where: any = { negocioId };
-    if (canal) where.canal = canal;
+    if (canal) Object.assign(where, whereParaClaveCanal(canal));
     if (fechaInicio && fechaFin) {
       where.fechaVenta = {
         gte: parsearFechaLocal(fechaInicio),
         lte: parsearFechaLocal(fechaFin)
       };
     }
+
+    const canalesPersonalizados = await prisma.canalPersonalizado.findMany({
+      where: { negocioId },
+      select: { id: true, nombre: true }
+    });
+    const nombrePersonalizado = new Map(canalesPersonalizados.map((c) => [c.id, c.nombre]));
+    const labelDesdeClave = (clave: string): string => {
+      if (esClaveCanalPersonalizado(clave)) {
+        const id = idDesdeClaveCanal(clave);
+        return (id && nombrePersonalizado.get(id)) || 'Otro';
+      }
+      return CANAL_LABELS[clave] || clave;
+    };
 
     let titulo = '';
     let nombreArchivo = '';
@@ -69,7 +92,7 @@ export async function POST(request: NextRequest) {
         ],
         filas: ventas.flatMap((v) => v.items.map((item) => ({
           fecha: v.fechaVenta.toLocaleDateString('es-PE'),
-          canal: v.canal,
+          canal: labelDesdeClave(claveCanal(v.canal, v.canalPersonalizadoId)),
           item: item.producto.nombre,
           cantidad: item.cantidad,
           monto: Number(item.monto.toFixed(2)),
@@ -87,7 +110,8 @@ export async function POST(request: NextRequest) {
       const ticketPromedio = cantidadVentas > 0 ? totalVentas / cantidadVentas : 0;
 
       const ventasPorCanal = ventas.reduce((acc, v) => {
-        acc[v.canal] = (acc[v.canal] || 0) + v.monto;
+        const clave = claveCanal(v.canal, v.canalPersonalizadoId);
+        acc[clave] = (acc[clave] || 0) + v.monto;
         return acc;
       }, {} as Record<string, number>);
 
@@ -109,7 +133,7 @@ export async function POST(request: NextRequest) {
         {
           titulo: 'Ventas por canal',
           columnas: [{ key: 'canal', label: 'Canal' }, { key: 'monto', label: 'Monto' }],
-          filas: Object.entries(ventasPorCanal).map(([canal, monto]) => ({ canal, monto: Number(monto.toFixed(2)) }))
+          filas: Object.entries(ventasPorCanal).map(([clave, monto]) => ({ canal: labelDesdeClave(clave), monto: Number(monto.toFixed(2)) }))
         },
         {
           titulo: 'Productos / servicios top',
@@ -152,6 +176,8 @@ export async function POST(request: NextRequest) {
         where: { negocioId },
         include: { ventas: { where, select: { monto: true, fechaVenta: true } } }
       });
+      const canalPreferidoLabel = (c: { canalPreferido: string | null; canalPreferidoPersonalizadoId: string | null }) =>
+        c.canalPreferido ? labelDesdeClave(claveCanal(c.canalPreferido, c.canalPreferidoPersonalizadoId)) : '—';
 
       secciones = [{
         titulo,
@@ -168,7 +194,7 @@ export async function POST(request: NextRequest) {
           return {
             nombre: c.nombre,
             telefono: c.telefono || '—',
-            canalPreferido: c.canalPreferido || '—',
+            canalPreferido: canalPreferidoLabel(c),
             compras: c.ventas.length,
             ultimaCompra: ultima ? ultima.toLocaleDateString('es-PE') : 'Sin compras',
             totalGastado: Number(c.ventas.reduce((sum, v) => sum + v.monto, 0).toFixed(2))

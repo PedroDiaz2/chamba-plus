@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { CanalVenta } from '@prisma/client';
 import { siguienteCodigo, normalizarCodigo } from '@/lib/codigos';
+import { claveCanal, esClaveCanalPersonalizado, idDesdeClaveCanal } from '@/lib/canales';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,8 +18,9 @@ export async function GET(request: NextRequest) {
     const clientes = await prisma.cliente.findMany({
       where: { negocioId },
       include: {
+        canalPreferidoPersonalizado: true,
         ventas: {
-          select: { monto: true, fechaVenta: true, canal: true }
+          select: { monto: true, fechaVenta: true, canal: true, canalPersonalizadoId: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -31,11 +33,25 @@ export async function GET(request: NextRequest) {
         return !max || v.fechaVenta > max ? v.fechaVenta : max;
       }, null);
 
-      const canalCount = c.ventas.reduce((acc, v) => {
-        acc[v.canal] = (acc[v.canal] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-      const canalMasFrecuente = Object.entries(canalCount).sort((a, b) => b[1] - a[1])[0]?.[0];
+      let canalPreferidoFinal = c.canalPreferido;
+      let canalPreferidoPersonalizadoIdFinal = c.canalPreferidoPersonalizadoId;
+
+      if (!canalPreferidoFinal) {
+        const canalCount: Record<string, number> = {};
+        for (const v of c.ventas) {
+          const clave = claveCanal(v.canal, v.canalPersonalizadoId);
+          canalCount[clave] = (canalCount[clave] || 0) + 1;
+        }
+        const claveTop = Object.entries(canalCount).sort((a, b) => b[1] - a[1])[0]?.[0];
+        if (claveTop) {
+          if (esClaveCanalPersonalizado(claveTop)) {
+            canalPreferidoFinal = CanalVenta.otro;
+            canalPreferidoPersonalizadoIdFinal = idDesdeClaveCanal(claveTop);
+          } else {
+            canalPreferidoFinal = claveTop as CanalVenta;
+          }
+        }
+      }
 
       const { ventas, ...clienteBase } = c;
       return {
@@ -43,7 +59,8 @@ export async function GET(request: NextRequest) {
         compras,
         totalGastado,
         ultimaCompra,
-        canalPreferido: c.canalPreferido || canalMasFrecuente || null,
+        canalPreferido: canalPreferidoFinal,
+        canalPreferidoPersonalizadoId: canalPreferidoPersonalizadoIdFinal,
         esRecurrente: compras > 1
       };
     });
@@ -70,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { codigo, nombre, telefono, dni, direccion, canalPreferido, notas } = body;
+    const { codigo, nombre, telefono, dni, direccion, canalPreferido, canalPreferidoPersonalizadoId, notas } = body;
 
     if (!nombre) {
       return NextResponse.json(
@@ -88,6 +105,26 @@ export async function POST(request: NextRequest) {
         { error: 'Ya existe un cliente con ese nombre' },
         { status: 409 }
       );
+    }
+
+    let canalPersonalizadoFinal: string | null = null;
+    if (canalPreferido === CanalVenta.otro) {
+      if (!canalPreferidoPersonalizadoId) {
+        return NextResponse.json(
+          { error: 'Debes elegir cual canal personalizado prefiere este cliente' },
+          { status: 400 }
+        );
+      }
+      const canalPersonalizado = await prisma.canalPersonalizado.findFirst({
+        where: { id: canalPreferidoPersonalizadoId, negocioId, activo: true }
+      });
+      if (!canalPersonalizado) {
+        return NextResponse.json(
+          { error: 'Canal personalizado no encontrado o inactivo' },
+          { status: 404 }
+        );
+      }
+      canalPersonalizadoFinal = canalPersonalizado.id;
     }
 
     const codigosExistentes = await prisma.cliente.findMany({ where: { negocioId }, select: { codigo: true } });
@@ -113,8 +150,10 @@ export async function POST(request: NextRequest) {
         dni: dni || null,
         direccion: direccion || null,
         canalPreferido: canalPreferido ? (canalPreferido as CanalVenta) : null,
+        canalPreferidoPersonalizadoId: canalPersonalizadoFinal,
         notas: notas || null
-      }
+      },
+      include: { canalPreferidoPersonalizado: true }
     });
 
     return NextResponse.json({ cliente }, { status: 201 });

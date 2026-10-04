@@ -65,15 +65,35 @@ model Negocio {
   password  String
   telefono  String
   canales   CanalVenta[]
-  otroCanalNombre      String?
-  otroCanalDescripcion String?
   productos Producto[]
   ventas    Venta[]
   clientes  Cliente[]
   alertas   Alerta[]
   movimientos MovimientoInventario[]
+  canalesPersonalizados CanalPersonalizado[]
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+}
+
+// Canales de venta adicionales que cada negocio puede definir con su propio
+// nombre (por ejemplo "Rappi" o "Ferias"), mas alla de los canales fijos del
+// enum CanalVenta. Una Venta o un Cliente que usa un canal personalizado
+// sigue guardando canal = "otro" en el enum, y referencia aqui cual
+// especificamente, para que se puedan tratar como canales separados en
+// los indicadores (igual que WhatsApp o Instagram).
+model CanalPersonalizado {
+  id          String   @id @default(cuid())
+  negocioId   String
+  negocio     Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  nombre      String
+  descripcion String
+  activo      Boolean  @default(true)
+  ventas      Venta[]
+  clientesPreferido Cliente[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([negocioId, nombre])
 }
 
 model Producto {
@@ -105,6 +125,8 @@ model Cliente {
   dni            String?
   direccion      String?
   canalPreferido CanalVenta?
+  canalPreferidoPersonalizadoId String?
+  canalPreferidoPersonalizado   CanalPersonalizado? @relation(fields: [canalPreferidoPersonalizadoId], references: [id], onDelete: SetNull)
   notas          String?
   negocioId      String
   negocio        Negocio     @relation(fields: [negocioId], references: [id], onDelete: Cascade)
@@ -118,6 +140,8 @@ model Cliente {
 model Venta {
   id          String      @id @default(cuid())
   canal       CanalVenta
+  canalPersonalizadoId String?
+  canalPersonalizado   CanalPersonalizado? @relation(fields: [canalPersonalizadoId], references: [id], onDelete: SetNull)
   monto       Float
   descuento   Float       @default(0)
   fechaVenta  DateTime

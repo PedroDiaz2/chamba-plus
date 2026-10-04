@@ -8,9 +8,7 @@ const NEGOCIO_SELECT = {
   rubro: true,
   telefono: true,
   email: true,
-  canales: true,
-  otroCanalNombre: true,
-  otroCanalDescripcion: true
+  canales: true
 };
 
 export async function GET(request: NextRequest) {
@@ -66,14 +64,14 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { canales, nombre, rubro, telefono, otroCanalNombre, otroCanalDescripcion } = body;
+    const { canales, nombre, rubro, telefono } = body;
 
     const data: any = {};
 
     if (canales !== undefined) {
-      if (!Array.isArray(canales) || canales.length === 0) {
+      if (!Array.isArray(canales)) {
         return NextResponse.json(
-          { error: 'Debes tener al menos un canal de venta habilitado' },
+          { error: 'Lista de canales inválida' },
           { status: 400 }
         );
       }
@@ -86,18 +84,24 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      if (canales.includes('otro')) {
-        const nombreFinal = otroCanalNombre !== undefined ? otroCanalNombre : negocioActual.otroCanalNombre;
-        const descripcionFinal = otroCanalDescripcion !== undefined ? otroCanalDescripcion : negocioActual.otroCanalDescripcion;
-        if (!nombreFinal || !nombreFinal.trim() || !descripcionFinal || !descripcionFinal.trim()) {
+      // El canal "otro" ya no se activa aqui: los canales personalizados (con
+      // su propio nombre) se gestionan en /api/canales-personalizados y estan
+      // disponibles para usarse apenas tengan al menos uno activo.
+      const canalesFinales = canales.filter((c: string) => c !== 'otro') as CanalVenta[];
+
+      if (canalesFinales.length === 0) {
+        const canalPersonalizadoActivo = await prisma.canalPersonalizado.findFirst({
+          where: { negocioId, activo: true }
+        });
+        if (!canalPersonalizadoActivo) {
           return NextResponse.json(
-            { error: 'Para habilitar el canal "Otro" debes indicar un nombre y una descripción' },
+            { error: 'Debes tener al menos un canal de venta habilitado (fijo o personalizado)' },
             { status: 400 }
           );
         }
       }
 
-      data.canales = canales as CanalVenta[];
+      data.canales = canalesFinales;
     }
 
     if (nombre !== undefined) {
@@ -129,9 +133,6 @@ export async function PATCH(request: NextRequest) {
       }
       data.telefono = telefono.trim();
     }
-
-    if (otroCanalNombre !== undefined) data.otroCanalNombre = otroCanalNombre || null;
-    if (otroCanalDescripcion !== undefined) data.otroCanalDescripcion = otroCanalDescripcion || null;
 
     const negocio = await prisma.negocio.update({
       where: { id: negocioId },

@@ -33,8 +33,20 @@ const CANAL_LABELS: Record<string, string> = {
   facebook: 'Facebook',
   tiktok: 'TikTok',
   marketplace: 'Marketplace',
-  otro: 'Otro',
 };
+
+// Un canal personalizado se codifica en el selector como "otro:<id>", para
+// poder distinguir entre varios canales "Otro" sin cambiar el tipo del campo.
+const PREFIJO_CANAL_PERSONALIZADO = 'otro:';
+const codificarCanalPersonalizado = (id: string) => `${PREFIJO_CANAL_PERSONALIZADO}${id}`;
+const esCanalPersonalizado = (valor: string) => valor.startsWith(PREFIJO_CANAL_PERSONALIZADO);
+const idDeCanalPersonalizado = (valor: string) => valor.slice(PREFIJO_CANAL_PERSONALIZADO.length);
+
+interface CanalPersonalizado {
+  id: string;
+  nombre: string;
+  activo: boolean;
+}
 
 interface Cliente {
   id: string;
@@ -44,6 +56,7 @@ interface Cliente {
   dni: string | null;
   direccion: string | null;
   canalPreferido: string | null;
+  canalPreferidoPersonalizadoId?: string | null;
   notas: string | null;
   compras: number;
   totalGastado: number;
@@ -64,7 +77,7 @@ const FORM_VACIO = {
 export default function Clientes() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [canalesHabilitados, setCanalesHabilitados] = useState<string[]>(Object.keys(CANAL_LABELS));
-  const [canalLabels, setCanalLabels] = useState<Record<string, string>>(CANAL_LABELS);
+  const [canalesPersonalizados, setCanalesPersonalizados] = useState<CanalPersonalizado[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
@@ -81,6 +94,7 @@ export default function Clientes() {
   useEffect(() => {
     fetchClientes();
     fetchNegocio();
+    fetchCanalesPersonalizados();
   }, []);
 
   const fetchClientes = async () => {
@@ -103,13 +117,33 @@ export default function Clientes() {
       const data = await response.json();
       if (response.ok && data.negocio?.canales?.length) {
         setCanalesHabilitados(data.negocio.canales);
-        if (data.negocio.otroCanalNombre) {
-          setCanalLabels((prev) => ({ ...prev, otro: data.negocio.otroCanalNombre }));
-        }
       }
     } catch (error) {
       console.error('Error al cargar negocio:', error);
     }
+  };
+
+  const fetchCanalesPersonalizados = async () => {
+    try {
+      const response = await fetch('/api/canales-personalizados');
+      const data = await response.json();
+      if (response.ok) {
+        setCanalesPersonalizados(data.canalesPersonalizados);
+      }
+    } catch (error) {
+      console.error('Error al cargar canales personalizados:', error);
+    }
+  };
+
+  // Opciones de canal disponibles (fijos habilitados + personalizados activos),
+  // y mapa de etiquetas para mostrar el nombre correcto de cada uno.
+  const canalOpciones = [
+    ...canalesHabilitados.map((c) => ({ value: c, label: CANAL_LABELS[c] || c })),
+    ...canalesPersonalizados.filter((cp) => cp.activo).map((cp) => ({ value: codificarCanalPersonalizado(cp.id), label: cp.nombre }))
+  ];
+  const canalLabels: Record<string, string> = {
+    ...CANAL_LABELS,
+    ...Object.fromEntries(canalesPersonalizados.map((cp) => [codificarCanalPersonalizado(cp.id), cp.nombre]))
   };
 
   const handleNuevoCliente = () => {
@@ -126,7 +160,9 @@ export default function Clientes() {
       telefono: cliente.telefono || '',
       dni: cliente.dni || '',
       direccion: cliente.direccion || '',
-      canalPreferido: cliente.canalPreferido || '',
+      canalPreferido: cliente.canalPreferido === 'otro' && cliente.canalPreferidoPersonalizadoId
+        ? codificarCanalPersonalizado(cliente.canalPreferidoPersonalizadoId)
+        : (cliente.canalPreferido || ''),
       notas: cliente.notas || '',
     });
     setShowForm(true);
@@ -142,10 +178,17 @@ export default function Clientes() {
     try {
       const esEdicion = !!editingCliente;
       const url = esEdicion ? `/api/clientes/${editingCliente!.id}` : '/api/clientes';
+      const payload = {
+        ...formCliente,
+        canalPreferido: formCliente.canalPreferido && esCanalPersonalizado(formCliente.canalPreferido) ? 'otro' : formCliente.canalPreferido,
+        ...(formCliente.canalPreferido && esCanalPersonalizado(formCliente.canalPreferido) && {
+          canalPreferidoPersonalizadoId: idDeCanalPersonalizado(formCliente.canalPreferido)
+        })
+      };
       const response = await fetch(url, {
         method: esEdicion ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formCliente)
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
@@ -347,7 +390,11 @@ export default function Clientes() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{cliente.telefono || '—'}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {cliente.canalPreferido ? (canalLabels[cliente.canalPreferido] || cliente.canalPreferido) : '—'}
+                    {cliente.canalPreferido
+                      ? (cliente.canalPreferido === 'otro'
+                          ? (cliente.canalPreferidoPersonalizadoId && canalLabels[codificarCanalPersonalizado(cliente.canalPreferidoPersonalizadoId)]) || 'Otro'
+                          : (canalLabels[cliente.canalPreferido] || cliente.canalPreferido))
+                      : '—'}
                   </td>
                   <td className="px-4 py-3 text-center">{cliente.compras}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
@@ -452,8 +499,8 @@ export default function Clientes() {
                   <SelectValue placeholder="Seleccionar" />
                 </SelectTrigger>
                 <SelectContent>
-                  {canalesHabilitados.map((value) => (
-                    <SelectItem key={value} value={value}>{canalLabels[value] || value}</SelectItem>
+                  {canalOpciones.map((canal) => (
+                    <SelectItem key={canal.value} value={canal.value}>{canal.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -559,7 +606,7 @@ export default function Clientes() {
                 <li>codigo: opcional, se genera automáticamente si se deja vacío</li>
                 <li>nombre: requerido, no debe repetirse</li>
                 <li>telefono, dni, direccion, notas: opcionales</li>
-                <li>canalPreferido: tienda_fisica, whatsapp, instagram, facebook, tiktok, marketplace, otro (opcional)</li>
+                <li>canalPreferido (opcional): tienda_fisica, whatsapp, instagram, facebook, tiktok, marketplace, o el nombre exacto de uno de tus canales personalizados (ej. "Rappi")</li>
               </ul>
             </div>
 

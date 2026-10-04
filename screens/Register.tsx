@@ -299,7 +299,6 @@ export default function Register({ onRegisterSuccess, onNavigateToLogin }: Regis
                       { id: 'facebook', label: 'Facebook' },
                       { id: 'tiktok', label: 'TikTok' },
                       { id: 'marketplace', label: 'Marketplace' },
-                      { id: 'otro', label: 'Otro' },
                     ].map((canal) => (
                       <div key={canal.id} className="flex items-center space-x-2">
                         <Checkbox

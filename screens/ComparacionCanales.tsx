@@ -33,7 +33,6 @@ const CANAL_LABELS: Record<string, string> = {
   facebook: 'Facebook',
   tiktok: 'TikTok',
   marketplace: 'Marketplace',
-  otro: 'Otro',
 };
 
 const CANAL_COLORS: Record<string, string> = {
@@ -43,8 +42,12 @@ const CANAL_COLORS: Record<string, string> = {
   facebook: '#1877F2',
   tiktok: '#000000',
   marketplace: '#FF6B00',
-  otro: '#7F77DD',
 };
+
+// Paleta de respaldo para canales personalizados (ej. "Rappi", "Ferias"), que se
+// tratan como canales independientes igual que los fijos de arriba.
+const PALETA_CANAL_PERSONALIZADO = ['#7F77DD', '#2BB673', '#E07A5F', '#3D5A80', '#F2B705', '#9B5DE5'];
+const PREFIJO_CANAL_PERSONALIZADO = 'otro:';
 
 interface ComparacionData {
   periodo: string;
@@ -60,15 +63,24 @@ export default function ComparacionCanales() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ComparacionData[]>([]);
   const [canales, setCanales] = useState<string[]>([]);
-  const [canalLabels, setCanalLabels] = useState<Record<string, string>>(CANAL_LABELS);
+  const [canalLabelsExtra, setCanalLabelsExtra] = useState<Record<string, string>>({});
+  const [canalColorsExtra, setCanalColorsExtra] = useState<Record<string, string>>({});
+  const canalLabels = { ...CANAL_LABELS, ...canalLabelsExtra };
+  const canalColors = { ...CANAL_COLORS, ...canalColorsExtra };
 
   useEffect(() => {
-    fetch('/api/negocio')
+    fetch('/api/canales-personalizados')
       .then((res) => res.json())
       .then((data) => {
-        if (data?.negocio?.otroCanalNombre) {
-          setCanalLabels((prev) => ({ ...prev, otro: data.negocio.otroCanalNombre }));
-        }
+        if (!data?.canalesPersonalizados) return;
+        const labels: Record<string, string> = {};
+        const colors: Record<string, string> = {};
+        (data.canalesPersonalizados as { id: string; nombre: string }[]).forEach((cp, idx) => {
+          labels[`${PREFIJO_CANAL_PERSONALIZADO}${cp.id}`] = cp.nombre;
+          colors[`${PREFIJO_CANAL_PERSONALIZADO}${cp.id}`] = PALETA_CANAL_PERSONALIZADO[idx % PALETA_CANAL_PERSONALIZADO.length];
+        });
+        setCanalLabelsExtra(labels);
+        setCanalColorsExtra(colors);
       })
       .catch(() => {});
   }, []);
@@ -224,7 +236,7 @@ export default function ComparacionCanales() {
           <CardContent className="pt-6 flex items-center gap-4">
             <div
               className="w-11 h-11 rounded-full flex items-center justify-center text-xl shrink-0"
-              style={{ backgroundColor: CANAL_COLORS[canalTop.canal] || '#7F77DD' }}
+              style={{ backgroundColor: canalColors[canalTop.canal] || '#7F77DD' }}
             >
               🏆
             </div>
@@ -253,7 +265,7 @@ export default function ComparacionCanales() {
                   key={canal}
                   type="monotone"
                   dataKey={canal}
-                  stroke={CANAL_COLORS[canal]}
+                  stroke={canalColors[canal]}
                   name={canalLabels[canal] || canal}
                   strokeWidth={2}
                 />
@@ -279,7 +291,7 @@ export default function ComparacionCanales() {
                 <Bar
                   key={canal}
                   dataKey={canal}
-                  fill={CANAL_COLORS[canal]}
+                  fill={canalColors[canal]}
                   name={canalLabels[canal] || canal}
                 />
               ))}
@@ -307,7 +319,7 @@ export default function ComparacionCanales() {
                 {resumenPorCanal.map(({ canal, total, promedio, maximo, minimo }) => (
                   <tr key={canal} className={`border-b border-[#e5e5e3] hover:bg-[#F7F8F6] ${canalTop?.canal === canal && total > 0 ? 'bg-[#F0FAF6]' : ''}`}>
                     <td className="px-4 py-3 flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CANAL_COLORS[canal] }}></div>
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: canalColors[canal] }}></div>
                       <span className="font-medium">{canalLabels[canal] || canal}</span>
                       {canalTop?.canal === canal && total > 0 && (
                         <Badge className="bg-[#1D9E75] text-white border-0">🏆 Top</Badge>

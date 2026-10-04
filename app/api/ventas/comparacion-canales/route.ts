@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { construirBuckets, construirBucketsRango, Periodo } from '@/lib/periodos';
 import { parsearFechaLocal } from '@/lib/fechas';
+import { claveCanal } from '@/lib/canales';
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,17 +43,18 @@ export async function GET(request: NextRequest) {
 
     const ventas = await prisma.venta.findMany({
       where: { negocioId, fechaVenta: { gte: desde, lt: hasta } },
-      select: { canal: true, monto: true, fechaVenta: true }
+      select: { canal: true, canalPersonalizadoId: true, monto: true, fechaVenta: true }
     });
 
-    const canalesPresentes = Array.from(new Set(ventas.map((v) => v.canal)));
+    const canalesPresentes = Array.from(new Set(ventas.map((v) => claveCanal(v.canal, v.canalPersonalizadoId))));
 
     const data = buckets.map((bucket) => {
       const ventasBucket = ventas.filter((v) => v.fechaVenta >= bucket.inicio && v.fechaVenta < bucket.fin);
       const porCanal = ventasBucket.reduce((acc, v) => {
-        if (!acc[v.canal]) acc[v.canal] = { monto: 0, cantidad: 0 };
-        acc[v.canal].monto += v.monto;
-        acc[v.canal].cantidad += 1;
+        const clave = claveCanal(v.canal, v.canalPersonalizadoId);
+        if (!acc[clave]) acc[clave] = { monto: 0, cantidad: 0 };
+        acc[clave].monto += v.monto;
+        acc[clave].cantidad += 1;
         return acc;
       }, {} as Record<string, { monto: number; cantidad: number }>);
 

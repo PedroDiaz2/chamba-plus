@@ -28,7 +28,32 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const body = await request.json();
-    const { codigo, nombre, telefono, dni, direccion, canalPreferido, notas } = body;
+    const { codigo, nombre, telefono, dni, direccion, canalPreferido, canalPreferidoPersonalizadoId, notas } = body;
+
+    let canalPersonalizadoFinal: string | null | undefined = undefined;
+    if (canalPreferido !== undefined) {
+      if (canalPreferido === CanalVenta.otro) {
+        const idElegido = canalPreferidoPersonalizadoId !== undefined ? canalPreferidoPersonalizadoId : cliente.canalPreferidoPersonalizadoId;
+        if (!idElegido) {
+          return NextResponse.json(
+            { error: 'Debes elegir cual canal personalizado prefiere este cliente' },
+            { status: 400 }
+          );
+        }
+        const canalPersonalizado = await prisma.canalPersonalizado.findFirst({
+          where: { id: idElegido, negocioId, activo: true }
+        });
+        if (!canalPersonalizado) {
+          return NextResponse.json(
+            { error: 'Canal personalizado no encontrado o inactivo' },
+            { status: 404 }
+          );
+        }
+        canalPersonalizadoFinal = canalPersonalizado.id;
+      } else {
+        canalPersonalizadoFinal = null;
+      }
+    }
 
     if (nombre !== undefined && !nombre) {
       return NextResponse.json(
@@ -80,6 +105,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         ...(dni !== undefined && { dni: dni || null }),
         ...(direccion !== undefined && { direccion: direccion || null }),
         ...(canalPreferido !== undefined && { canalPreferido: canalPreferido ? (canalPreferido as CanalVenta) : null }),
+        ...(canalPersonalizadoFinal !== undefined && { canalPreferidoPersonalizadoId: canalPersonalizadoFinal }),
         ...(notas !== undefined && { notas: notas || null })
       }
     });

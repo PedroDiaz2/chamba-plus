@@ -55,12 +55,20 @@ interface VentaItemData {
 interface Venta {
   id: string;
   canal: string;
+  canalPersonalizadoId?: string | null;
+  canalPersonalizado?: { id: string; nombre: string } | null;
   monto: number;
   descuento: number;
   fechaVenta: string;
   cliente?: string | null;
   clienteId?: string | null;
   items: VentaItemData[];
+}
+
+interface CanalPersonalizado {
+  id: string;
+  nombre: string;
+  activo: boolean;
 }
 
 const CANAL_LABELS: Record<string, string> = {
@@ -70,8 +78,14 @@ const CANAL_LABELS: Record<string, string> = {
   facebook: 'Facebook',
   tiktok: 'TikTok',
   marketplace: 'Marketplace',
-  otro: 'Otro',
 };
+
+// Un canal personalizado se codifica en los selectores como "otro:<id>", para
+// poder distinguir entre varios canales "Otro" sin cambiar el tipo del campo.
+const PREFIJO_CANAL_PERSONALIZADO = 'otro:';
+const codificarCanalPersonalizado = (id: string) => `${PREFIJO_CANAL_PERSONALIZADO}${id}`;
+const esCanalPersonalizado = (valor: string) => valor.startsWith(PREFIJO_CANAL_PERSONALIZADO);
+const idDeCanalPersonalizado = (valor: string) => valor.slice(PREFIJO_CANAL_PERSONALIZADO.length);
 
 const CLIENTE_NUEVO = '__nuevo__';
 const CLIENTE_OCASIONAL = '__ocasional__';
@@ -97,7 +111,7 @@ export default function Ventas() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [canalesHabilitados, setCanalesHabilitados] = useState<string[]>(Object.keys(CANAL_LABELS));
-  const [canalLabels, setCanalLabels] = useState<Record<string, string>>(CANAL_LABELS);
+  const [canalesPersonalizados, setCanalesPersonalizados] = useState<CanalPersonalizado[]>([]);
   const [showRegistrarVenta, setShowRegistrarVenta] = useState(false);
   const [showImportarMasivo, setShowImportarMasivo] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -125,6 +139,7 @@ export default function Ventas() {
     fetchVentas();
     fetchClientes();
     fetchNegocio();
+    fetchCanalesPersonalizados();
   }, []);
 
   const fetchProductos = async () => {
@@ -175,13 +190,33 @@ export default function Ventas() {
       const data = await response.json();
       if (response.ok && data.negocio?.canales?.length) {
         setCanalesHabilitados(data.negocio.canales);
-        if (data.negocio.otroCanalNombre) {
-          setCanalLabels((prev) => ({ ...prev, otro: data.negocio.otroCanalNombre }));
-        }
       }
     } catch (error) {
       console.error('Error al cargar negocio:', error);
     }
+  };
+
+  const fetchCanalesPersonalizados = async () => {
+    try {
+      const response = await fetch('/api/canales-personalizados');
+      const data = await response.json();
+      if (response.ok) {
+        setCanalesPersonalizados(data.canalesPersonalizados);
+      }
+    } catch (error) {
+      console.error('Error al cargar canales personalizados:', error);
+    }
+  };
+
+  // Opciones de canal disponibles para elegir (fijos habilitados + personalizados
+  // activos), y mapa de etiquetas para mostrar el nombre correcto de cada uno.
+  const canalOpciones = [
+    ...canalesHabilitados.map((c) => ({ value: c, label: CANAL_LABELS[c] || c })),
+    ...canalesPersonalizados.filter((cp) => cp.activo).map((cp) => ({ value: codificarCanalPersonalizado(cp.id), label: cp.nombre }))
+  ];
+  const canalLabels: Record<string, string> = {
+    ...CANAL_LABELS,
+    ...Object.fromEntries(canalesPersonalizados.map((cp) => [codificarCanalPersonalizado(cp.id), cp.nombre]))
   };
 
   const totalVentasHoy = ventas.reduce((sum, v) => sum + v.monto, 0);
@@ -324,7 +359,8 @@ export default function Ventas() {
     setLoading(true);
     try {
       const payload: any = {
-        canal: nuevoVenta.canal,
+        canal: esCanalPersonalizado(nuevoVenta.canal) ? 'otro' : nuevoVenta.canal,
+        ...(esCanalPersonalizado(nuevoVenta.canal) && { canalPersonalizadoId: idDeCanalPersonalizado(nuevoVenta.canal) }),
         items: nuevoVenta.items.map((it) => ({
           productoId: it.productoId,
           cantidad: it.cantidad,
@@ -371,7 +407,7 @@ export default function Ventas() {
   const handleAbrirEdicion = (venta: Venta) => {
     setEditingVenta(venta);
     setFormEdicion({
-      canal: venta.canal,
+      canal: venta.canal === 'otro' && venta.canalPersonalizadoId ? codificarCanalPersonalizado(venta.canalPersonalizadoId) : venta.canal,
       fechaVenta: venta.fechaVenta.split('T')[0],
       clienteSeleccion: venta.clienteId || CLIENTE_OCASIONAL,
     });
@@ -388,7 +424,8 @@ export default function Ventas() {
     setGuardandoEdicion(true);
     try {
       const payload: any = {
-        canal: formEdicion.canal,
+        canal: esCanalPersonalizado(formEdicion.canal) ? 'otro' : formEdicion.canal,
+        ...(esCanalPersonalizado(formEdicion.canal) && { canalPersonalizadoId: idDeCanalPersonalizado(formEdicion.canal) }),
         fechaVenta: formEdicion.fechaVenta,
         clienteId: formEdicion.clienteSeleccion === CLIENTE_OCASIONAL ? null : formEdicion.clienteSeleccion,
       };
@@ -609,7 +646,7 @@ export default function Ventas() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-sm">
-                    {canalLabels[venta.canal] || venta.canal}
+                    {venta.canal === 'otro' ? (venta.canalPersonalizado?.nombre || 'Otro') : (canalLabels[venta.canal] || venta.canal)}
                   </td>
                   <td className="px-4 py-3 text-right font-bold">S/ {venta.monto.toFixed(2)}</td>
                   <td className="px-4 py-3 text-center">
@@ -651,9 +688,9 @@ export default function Ventas() {
                   <SelectValue placeholder="Seleccionar canal" />
                 </SelectTrigger>
                 <SelectContent>
-                  {canalesHabilitados.map((canal) => (
-                    <SelectItem key={canal} value={canal}>
-                      {canalLabels[canal] || canal}
+                  {canalOpciones.map((canal) => (
+                    <SelectItem key={canal.value} value={canal.value}>
+                      {canal.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -870,8 +907,8 @@ export default function Ventas() {
                   <SelectValue placeholder="Seleccionar canal" />
                 </SelectTrigger>
                 <SelectContent>
-                  {canalesHabilitados.map((canal) => (
-                    <SelectItem key={canal} value={canal}>{canalLabels[canal] || canal}</SelectItem>
+                  {canalOpciones.map((canal) => (
+                    <SelectItem key={canal.value} value={canal.value}>{canal.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -990,7 +1027,7 @@ whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
             <div className="space-y-2">
               <p className="text-sm font-medium">Columnas requeridas:</p>
               <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                <li>canal: tienda_fisica, whatsapp, instagram, facebook, tiktok, marketplace, otro</li>
+                <li>canal: tienda_fisica, whatsapp, instagram, facebook, tiktok, marketplace, o el nombre exacto de uno de tus canales personalizados (ej. "Rappi")</li>
                 <li>producto: nombre exacto del producto (debe existir en tu catálogo)</li>
                 <li>cantidad: número entero mayor a 0</li>
                 <li>monto: número decimal mayor a 0</li>

@@ -36,7 +36,8 @@ export async function GET(request: NextRequest) {
     const ventas = await prisma.venta.findMany({
       where,
       include: {
-        items: { include: { producto: true } }
+        items: { include: { producto: true } },
+        canalPersonalizado: true
       },
       orderBy: { fechaVenta: 'desc' }
     });
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { canal, items, descuento, fechaVenta, cliente, clienteId } = body;
+    const { canal, canalPersonalizadoId, items, descuento, fechaVenta, cliente, clienteId } = body;
 
     // Validaciones básicas
     if (!canal || !Array.isArray(items) || items.length === 0 || !fechaVenta) {
@@ -71,6 +72,26 @@ export async function POST(request: NextRequest) {
         { error: 'Todos los campos requeridos deben estar completos' },
         { status: 400 }
       );
+    }
+
+    let canalPersonalizadoFinal: string | null = null;
+    if (canal === CanalVenta.otro) {
+      if (!canalPersonalizadoId) {
+        return NextResponse.json(
+          { error: 'Debes elegir cual canal personalizado se uso en esta venta' },
+          { status: 400 }
+        );
+      }
+      const canalPersonalizado = await prisma.canalPersonalizado.findFirst({
+        where: { id: canalPersonalizadoId, negocioId, activo: true }
+      });
+      if (!canalPersonalizado) {
+        return NextResponse.json(
+          { error: 'Canal personalizado no encontrado o inactivo' },
+          { status: 404 }
+        );
+      }
+      canalPersonalizadoFinal = canalPersonalizado.id;
     }
 
     const descuentoFinal = descuento !== undefined && descuento !== null ? Number(descuento) : 0;
@@ -140,6 +161,7 @@ export async function POST(request: NextRequest) {
       registrarVentaConStock(tx, {
         negocioId,
         canal: canal as CanalVenta,
+        canalPersonalizadoId: canalPersonalizadoFinal,
         items: itemsValidados,
         descuento: descuentoFinal,
         fechaVenta: fechaVentaDate,

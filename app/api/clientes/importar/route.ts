@@ -28,6 +28,14 @@ export async function POST(request: NextRequest) {
     const codigosUsados = new Set(existentes.map((c) => c.codigo));
     const nombresUsados = new Set(existentes.map((c) => c.nombre.toLowerCase()));
 
+    const canalesPersonalizados = await prisma.canalPersonalizado.findMany({
+      where: { negocioId, activo: true },
+      select: { id: true, nombre: true }
+    });
+    const canalPersonalizadoMap = new Map<string, { id: string }>(
+      canalesPersonalizados.map((c) => [c.nombre.toLowerCase(), { id: c.id }])
+    );
+
     const errores: string[] = [];
     let creados = 0;
 
@@ -48,13 +56,21 @@ export async function POST(request: NextRequest) {
         }
 
         let canalPreferido: CanalVenta | null = null;
+        let canalPreferidoPersonalizadoId: string | null = null;
         if (fila.canalpreferido && String(fila.canalpreferido).trim()) {
-          const canalRaw = String(fila.canalpreferido).trim().toLowerCase();
-          if (!Object.values(CanalVenta).includes(canalRaw as CanalVenta)) {
-            errores.push(`Línea ${linea}: Canal preferido inválido "${fila.canalpreferido}"`);
-            continue;
+          const canalRaw = String(fila.canalpreferido).trim();
+          const canalesFijos: CanalVenta[] = Object.values(CanalVenta).filter((c) => c !== CanalVenta.otro);
+          if (canalesFijos.includes(canalRaw.toLowerCase() as CanalVenta)) {
+            canalPreferido = canalRaw.toLowerCase() as CanalVenta;
+          } else {
+            const canalPersonalizado = canalPersonalizadoMap.get(canalRaw.toLowerCase());
+            if (!canalPersonalizado) {
+              errores.push(`Línea ${linea}: Canal preferido inválido "${fila.canalpreferido}". Debe ser uno de: ${canalesFijos.join(', ')}, o el nombre de uno de tus canales personalizados.`);
+              continue;
+            }
+            canalPreferido = CanalVenta.otro;
+            canalPreferidoPersonalizadoId = canalPersonalizado.id;
           }
-          canalPreferido = canalRaw as CanalVenta;
         }
 
         let codigo: string;
@@ -79,6 +95,7 @@ export async function POST(request: NextRequest) {
             dni: fila.dni ? String(fila.dni).trim() : null,
             direccion: fila.direccion ? String(fila.direccion).trim() : null,
             canalPreferido,
+            canalPreferidoPersonalizadoId,
             notas: fila.notas ? String(fila.notas).trim() : null
           }
         });

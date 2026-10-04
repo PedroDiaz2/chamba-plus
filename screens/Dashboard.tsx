@@ -77,7 +77,6 @@ const CANAL_LABELS: Record<string, string> = {
   facebook: 'Facebook',
   tiktok: 'TikTok',
   marketplace: 'Marketplace',
-  otro: 'Otro',
 };
 
 const CANAL_COLORS: Record<string, string> = {
@@ -87,8 +86,12 @@ const CANAL_COLORS: Record<string, string> = {
   facebook: '#1877F2',
   tiktok: '#000000',
   marketplace: '#FF6B00',
-  otro: '#7F77DD',
 };
+
+// Paleta de respaldo para canales personalizados (ej. "Rappi", "Ferias"), que se
+// tratan como canales independientes igual que los fijos de arriba.
+const PALETA_CANAL_PERSONALIZADO = ['#7F77DD', '#2BB673', '#E07A5F', '#3D5A80', '#F2B705', '#9B5DE5'];
+const PREFIJO_CANAL_PERSONALIZADO = 'otro:';
 
 interface DashboardData {
   negocio: { nombre: string };
@@ -131,6 +134,25 @@ export default function Dashboard() {
   const [usarRangoPersonalizado, setUsarRangoPersonalizado] = useState(false);
   const [fechaInicioPersonalizada, setFechaInicioPersonalizada] = useState('');
   const [fechaFinPersonalizada, setFechaFinPersonalizada] = useState('');
+  const [canalLabelsExtra, setCanalLabelsExtra] = useState<Record<string, string>>({});
+  const [canalColorsExtra, setCanalColorsExtra] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    fetch('/api/canales-personalizados')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data?.canalesPersonalizados) return;
+        const labels: Record<string, string> = {};
+        const colors: Record<string, string> = {};
+        (data.canalesPersonalizados as { id: string; nombre: string }[]).forEach((cp, idx) => {
+          labels[`${PREFIJO_CANAL_PERSONALIZADO}${cp.id}`] = cp.nombre;
+          colors[`${PREFIJO_CANAL_PERSONALIZADO}${cp.id}`] = PALETA_CANAL_PERSONALIZADO[idx % PALETA_CANAL_PERSONALIZADO.length];
+        });
+        setCanalLabelsExtra(labels);
+        setCanalColorsExtra(colors);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (usarRangoPersonalizado && (!fechaInicioPersonalizada || !fechaFinPersonalizada)) return;
@@ -178,22 +200,24 @@ export default function Dashboard() {
   }
 
   const { negocio, kpis, resumenHoy } = data;
+  const canalLabels = { ...CANAL_LABELS, ...canalLabelsExtra };
+  const canalColors = { ...CANAL_COLORS, ...canalColorsExtra };
 
   // Preparar datos para gráficos
   const participacionChartData = kpis.participacionPorCanal.map(p => ({
-    name: CANAL_LABELS[p.canal] || p.canal,
+    name: canalLabels[p.canal] || p.canal,
     value: p.porcentaje,
-    fill: CANAL_COLORS[p.canal] || '#7F77DD',
+    fill: canalColors[p.canal] || '#7F77DD',
     monto: p.monto
   }));
 
   const ticketPromedioChartData = kpis.ticketPromedioPorCanal.map(t => ({
-    canal: CANAL_LABELS[t.canal] || t.canal,
+    canal: canalLabels[t.canal] || t.canal,
     ticket: t.ticketPromedio
   }));
 
   const productoTopChartData = kpis.productoTopPorCanal.map(p => ({
-    canal: CANAL_LABELS[p.canal] || p.canal,
+    canal: canalLabels[p.canal] || p.canal,
     producto: p.producto,
     cantidad: p.cantidad
   }));
@@ -403,8 +427,8 @@ export default function Dashboard() {
             {kpis.variacionPorCanal.map((item) => (
               <div key={item.canal} className="flex items-center justify-between p-3 bg-[#F7F8F6] rounded-lg">
                 <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CANAL_COLORS[item.canal] || '#7F77DD' }}></div>
-                  <span className="font-medium">{CANAL_LABELS[item.canal] || item.canal}</span>
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: canalColors[item.canal] || '#7F77DD' }}></div>
+                  <span className="font-medium">{canalLabels[item.canal] || item.canal}</span>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">

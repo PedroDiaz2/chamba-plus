@@ -26,13 +26,39 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const body = await request.json();
-    const { canal, fechaVenta, cliente, clienteId } = body;
+    const { canal, canalPersonalizadoId, fechaVenta, cliente, clienteId } = body;
 
     if (canal !== undefined && !Object.values(CanalVenta).includes(canal)) {
       return NextResponse.json(
         { error: 'Canal inválido' },
         { status: 400 }
       );
+    }
+
+    // Canal final tras esta edición (el que se envía, o el que ya tenía la venta)
+    const canalFinal = canal !== undefined ? canal : venta.canal;
+    let canalPersonalizadoFinal: string | null | undefined = undefined;
+    if (canalFinal === CanalVenta.otro) {
+      const idElegido = canalPersonalizadoId !== undefined ? canalPersonalizadoId : venta.canalPersonalizadoId;
+      if (!idElegido) {
+        return NextResponse.json(
+          { error: 'Debes elegir cual canal personalizado se uso en esta venta' },
+          { status: 400 }
+        );
+      }
+      const canalPersonalizado = await prisma.canalPersonalizado.findFirst({
+        where: { id: idElegido, negocioId, activo: true }
+      });
+      if (!canalPersonalizado) {
+        return NextResponse.json(
+          { error: 'Canal personalizado no encontrado o inactivo' },
+          { status: 404 }
+        );
+      }
+      canalPersonalizadoFinal = canalPersonalizado.id;
+    } else if (canal !== undefined) {
+      // Si se cambia a un canal fijo, se limpia cualquier canal personalizado previo
+      canalPersonalizadoFinal = null;
     }
 
     let fechaVentaDate: Date | undefined;
@@ -75,10 +101,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       where: { id },
       data: {
         ...(canal !== undefined && { canal: canal as CanalVenta }),
+        ...(canalPersonalizadoFinal !== undefined && { canalPersonalizadoId: canalPersonalizadoFinal }),
         ...(fechaVentaDate !== undefined && { fechaVenta: fechaVentaDate }),
         ...(clienteIdFinal !== undefined && { clienteId: clienteIdFinal, cliente: clienteNombreFinal })
       },
-      include: { items: { include: { producto: true } } }
+      include: { items: { include: { producto: true } }, canalPersonalizado: true }
     });
 
     return NextResponse.json({ venta: ventaActualizada }, { status: 200 });
