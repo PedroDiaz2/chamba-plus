@@ -354,17 +354,19 @@ export default function Dashboard() {
           <CardContent className="pt-6">
             <h3 className="text-lg font-semibold text-[#0F6E56] mb-4">Participación de ventas por canal</h3>
             <p className="text-sm text-muted-foreground mb-4">¿En qué canal debo enfocar esfuerzo o inversión?</p>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie data={participacionChartData} dataKey="value" cx="38%" cy="50%" outerRadius={95} labelLine={false}>
-                  {participacionChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 13 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="max-w-md mx-auto">
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie data={participacionChartData} dataKey="value" cx="45%" cy="50%" outerRadius={95} labelLine={false}>
+                    {participacionChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                  <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 13 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
 
@@ -528,17 +530,19 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground mb-4">
                 Dos miradas distintas, no partes de un mismo total: "nuevos" mide cuándo se registraron; "recurrentes" mide cuántas veces te compraron en todo su historial. Un mismo cliente puede contarse en ambas, o en ninguna.
               </p>
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie data={clientesNuevosVsRecurrentes} dataKey="value" cx="38%" cy="50%" outerRadius={80} labelLine={false}>
-                    {clientesNuevosVsRecurrentes.map((entry, index) => (
-                      <Cell key={`cell-cliente-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 13 }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="max-w-md mx-auto">
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Pie data={clientesNuevosVsRecurrentes} dataKey="value" cx="45%" cy="50%" outerRadius={80} labelLine={false}>
+                      {clientesNuevosVsRecurrentes.map((entry, index) => (
+                        <Cell key={`cell-cliente-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 13 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </CardContent>
           </Card>
 

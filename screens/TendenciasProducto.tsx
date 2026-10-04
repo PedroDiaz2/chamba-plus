@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  LineChart,
+  ComposedChart,
   Line,
-  AreaChart,
   Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
@@ -296,13 +296,13 @@ export default function TendenciasProducto() {
             </Card>
           </div>
 
-          {/* Gráfico de cantidad */}
+          {/* Gráfico combinado: unidades vendidas (área) e ingresos (línea), mismo periodo */}
           <Card className="bg-white border-t-4" style={{ borderTopColor: '#1D9E75' }}>
             <CardContent className="pt-6">
-              <h3 className="text-lg font-semibold text-[#0F6E56] mb-4">Evolución de unidades vendidas</h3>
-              <p className="text-sm text-muted-foreground mb-4">¿La demanda de este producto está creciendo?</p>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={data}>
+              <h3 className="text-lg font-semibold text-[#0F6E56] mb-4">Evolución de unidades vendidas e ingresos</h3>
+              <p className="text-sm text-muted-foreground mb-4">¿La demanda y los ingresos de este producto están creciendo?</p>
+              <ResponsiveContainer width="100%" height={320}>
+                <ComposedChart data={data}>
                   <defs>
                     <linearGradient id="colorCantidad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#0F6E56" stopOpacity={0.8} />
@@ -311,38 +311,32 @@ export default function TendenciasProducto() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="periodo" />
-                  <YAxis />
-                  <Tooltip formatter={(value: number) => `${value} unidades`} />
+                  <YAxis yAxisId="unidades" stroke="#0F6E56" allowDecimals={false} />
+                  <YAxis yAxisId="ingresos" orientation="right" stroke="#D85A30" />
+                  <Tooltip
+                    formatter={(value: number, name: string) =>
+                      name === 'Ingresos' ? [`S/ ${value.toFixed(2)}`, name] : [`${value} unidades`, name]
+                    }
+                  />
+                  <Legend />
                   <Area
+                    yAxisId="unidades"
                     type="monotone"
                     dataKey="cantidad"
+                    name="Unidades"
                     stroke="#0F6E56"
                     fillOpacity={1}
                     fill="url(#colorCantidad)"
                   />
-                </AreaChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Gráfico de monto */}
-          <Card className="bg-white border-t-4" style={{ borderTopColor: '#D85A30' }}>
-            <CardContent className="pt-6">
-              <h3 className="text-lg font-semibold text-[#0F6E56] mb-4">Evolución de ingresos</h3>
-              <p className="text-sm text-muted-foreground mb-4">¿Los ingresos de este producto están creciendo?</p>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={data}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="periodo" />
-                  <YAxis />
-                  <Tooltip formatter={(value: number) => `S/ ${value.toFixed(2)}`} />
                   <Line
+                    yAxisId="ingresos"
                     type="monotone"
                     dataKey="monto"
+                    name="Ingresos"
                     stroke="#D85A30"
                     strokeWidth={2}
                   />
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
