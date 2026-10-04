@@ -12,6 +12,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  LabelList,
   ResponsiveContainer,
 } from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
@@ -410,12 +411,30 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground py-12 text-center">No hay datos para este filtro</p>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={productoTopChartData} layout="vertical">
+              <BarChart data={productoTopChartData} layout="vertical" margin={{ right: 110 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis type="category" dataKey="producto" width={120} fontSize={12} />
-                <Tooltip />
-                <Bar dataKey="cantidad" fill="#EF9F27" />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis type="category" dataKey="canal" width={100} fontSize={12} />
+                <Tooltip
+                  formatter={(value: number, _name, props) => [`${value} unidades`, props.payload.producto]}
+                  labelFormatter={(canal) => `Canal: ${canal}`}
+                />
+                <Bar dataKey="cantidad" fill="#EF9F27">
+                  <LabelList
+                    dataKey="producto"
+                    content={({ x, y, width, height, value }: any) => (
+                      <text
+                        x={Number(x) + Number(width) + 8}
+                        y={Number(y) + Number(height) / 2}
+                        dy={4}
+                        fontSize={12}
+                        fill="#444444"
+                      >
+                        {value}
+                      </text>
+                    )}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
