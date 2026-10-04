@@ -549,9 +549,9 @@ export default function Ventas() {
 
       if (data.erroresCount > 0) {
         setImportErrors(data.errores);
-        toast.warning(`Se importaron ${data.ventasCreadas} de ${data.totalProcesado}. ${data.erroresCount} fila(s) con errores, revisa el detalle abajo.`);
+        toast.warning(`Se importaron ${data.ventasCreadas} venta(s) a partir de ${data.totalProcesado} fila(s) del archivo. ${data.erroresCount} fila(s) con errores, revisa el detalle abajo.`);
       } else {
-        toast.success(`Se importaron ${data.ventasCreadas} ventas correctamente`);
+        toast.success(`Se importaron ${data.ventasCreadas} venta(s) a partir de ${data.totalProcesado} fila(s) correctamente`);
         setShowImportarMasivo(false);
       }
     } catch (error) {
@@ -1008,9 +1008,10 @@ export default function Ventas() {
                 variant="link"
                 className="p-0 h-auto text-[#0F6E56] hover:text-[#0a5244]"
                 onClick={() => {
-                  const template = `canal,producto,cantidad,monto,fecha_venta,cliente
-tienda_fisica,Polo básico,2,50.00,2026-01-28,Maria Quispe
-whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
+                  const template = `numero_venta,canal,producto,cantidad,monto,fecha_venta,cliente
+1,tienda_fisica,Polo básico,2,50.00,2026-01-28,Maria Quispe
+1,tienda_fisica,Gorro de lana,1,15.00,2026-01-28,Maria Quispe
+,whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
                   const blob = new Blob([template], { type: 'text/csv' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
@@ -1027,26 +1028,30 @@ whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
             <div className="space-y-2">
               <p className="text-sm font-medium">Columnas requeridas:</p>
               <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                <li>numero_venta: identifica qué filas pertenecen a la misma venta (opcional, ver abajo)</li>
                 <li>canal: tienda_fisica, whatsapp, instagram, facebook, tiktok, marketplace, o el nombre exacto de uno de tus canales personalizados (ej. "Rappi")</li>
                 <li>producto: nombre exacto del producto (debe existir en tu catálogo)</li>
                 <li>cantidad: número entero mayor a 0</li>
-                <li>monto: número decimal mayor a 0</li>
+                <li>monto: número decimal mayor a 0 (el subtotal de esa línea, no el precio unitario)</li>
                 <li>fecha_venta: formato YYYY-MM-DD (ej. 2026-01-28)</li>
                 <li>cliente: nombre del cliente (opcional)</li>
               </ul>
               <p className="text-xs text-muted-foreground">
-                Cada fila de la carga masiva registra una venta de un solo producto. Si necesitas registrar
-                una venta con varios productos a la vez, hazlo desde el botón "Registrar venta".
+                Cada fila es un producto. Si una venta tuvo varios productos, repite el mismo valor de
+                "numero_venta" en todas sus filas (ej. "1" en dos filas): se registran como una sola venta
+                con esos productos, y el canal, la fecha y el cliente deben ser iguales en todas ellas. Deja
+                "numero_venta" vacío para una venta de un solo producto.
               </p>
             </div>
 
             {/* Preview Table */}
             <div className="space-y-2">
-              <p className="text-sm font-medium">Vista previa (primeras 2 filas de ejemplo)</p>
+              <p className="text-sm font-medium">Vista previa (filas de ejemplo)</p>
               <div className="border border-[#e5e5e3] rounded-lg overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-[#F0FAF6] border-b border-[#e5e5e3]">
                     <tr>
+                      <th className="px-3 py-2 text-left">N° venta</th>
                       <th className="px-3 py-2 text-left">Canal</th>
                       <th className="px-3 py-2 text-left">Producto</th>
                       <th className="px-3 py-2 text-right">Cantidad</th>
@@ -1057,6 +1062,7 @@ whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
                   </thead>
                   <tbody>
                     <tr className="border-b border-[#e5e5e3] hover:bg-[#F7F8F6]">
+                      <td className="px-3 py-2">1</td>
                       <td className="px-3 py-2">tienda_fisica</td>
                       <td className="px-3 py-2">Polo básico</td>
                       <td className="px-3 py-2 text-right">2</td>
@@ -1065,6 +1071,16 @@ whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
                       <td className="px-3 py-2">Maria Quispe</td>
                     </tr>
                     <tr className="border-b border-[#e5e5e3] hover:bg-[#F7F8F6]">
+                      <td className="px-3 py-2">1</td>
+                      <td className="px-3 py-2">tienda_fisica</td>
+                      <td className="px-3 py-2">Gorro de lana</td>
+                      <td className="px-3 py-2 text-right">1</td>
+                      <td className="px-3 py-2 text-right">15.00</td>
+                      <td className="px-3 py-2">2026-01-28</td>
+                      <td className="px-3 py-2">Maria Quispe</td>
+                    </tr>
+                    <tr className="border-b border-[#e5e5e3] hover:bg-[#F7F8F6]">
+                      <td className="px-3 py-2">—</td>
                       <td className="px-3 py-2">whatsapp</td>
                       <td className="px-3 py-2">Queso fresco</td>
                       <td className="px-3 py-2 text-right">1</td>
@@ -1075,6 +1091,10 @@ whatsapp,Queso fresco,1,12.50,2026-01-27,Juan Pérez`;
                   </tbody>
                 </table>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Las primeras 2 filas (mismo "1" en N° venta) se registran juntas como una sola venta de
+                2 productos. La tercera fila, sin N° venta, se registra como una venta aparte.
+              </p>
             </div>
 
             {importErrors.length > 0 && (

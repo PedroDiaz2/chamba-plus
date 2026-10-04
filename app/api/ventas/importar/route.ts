@@ -45,96 +45,196 @@ export async function POST(request: NextRequest) {
       canalesPersonalizados.map(c => [c.nombre.toLowerCase(), { id: c.id }])
     );
 
-    const errores: string[] = [];
-    const ventasCreadas: any[] = [];
+    const canalesFijos: CanalVenta[] = Object.values(CanalVenta).filter((c) => c !== CanalVenta.otro);
+
+    // Datos ya validados de una línea del CSV, lista para convertirse en un ítem de venta.
+    interface DatosLinea {
+      canalFinal: CanalVenta;
+      canalPersonalizadoId: string | null;
+      productoId: string;
+      cantidad: number;
+      precioUnitario: number;
+      fechaVenta: Date;
+      cliente: string | null;
+    }
+
+    // Cada fila del CSV, ya sea válida o no. "numeroVenta" agrupa varias filas en
+    // una sola venta con varios productos (columna opcional "numero_venta"); las
+    // filas sin ese valor siguen siendo una venta de un solo producto, como antes.
+    interface FilaProcesada {
+      linea: number;
+      numeroVenta: string | null;
+      ok: boolean;
+      mensaje?: string;
+      datos?: DatosLinea;
+    }
+
+    const filas: FilaProcesada[] = [];
 
     for (let i = 0; i < ventasCSV.length; i++) {
       const venta = ventasCSV[i];
       const linea = i + 1;
+      const numeroVenta = venta.numero_venta && String(venta.numero_venta).trim()
+        ? String(venta.numero_venta).trim()
+        : null;
+
+      const fallar = (mensaje: string) => filas.push({ linea, numeroVenta, ok: false, mensaje });
+
+      // Validar campos requeridos
+      if (!venta.canal || !venta.producto || !venta.cantidad || !venta.monto || !venta.fecha_venta) {
+        fallar('Faltan campos requeridos (canal, producto, cantidad, monto, fecha_venta)');
+        continue;
+      }
+
+      // Validar canal: debe ser uno de los canales fijos, o el nombre exacto
+      // de uno de los canales personalizados activos del negocio (ej. "Rappi")
+      const canalRaw = String(venta.canal).trim();
+      let canalFinal: CanalVenta;
+      let canalPersonalizadoId: string | null = null;
+
+      if (canalesFijos.includes(canalRaw as CanalVenta)) {
+        canalFinal = canalRaw as CanalVenta;
+      } else {
+        const canalPersonalizado = canalPersonalizadoMap.get(canalRaw.toLowerCase());
+        if (!canalPersonalizado) {
+          fallar(`Canal inválido "${venta.canal}". Valores válidos: ${canalesFijos.join(', ')}, o el nombre de uno de tus canales personalizados.`);
+          continue;
+        }
+        canalFinal = CanalVenta.otro;
+        canalPersonalizadoId = canalPersonalizado.id;
+      }
+
+      // Validar cantidad y monto
+      const cantidad = parseInt(venta.cantidad);
+      const monto = parseFloat(venta.monto);
+
+      if (isNaN(cantidad) || cantidad <= 0) {
+        fallar('La cantidad debe ser un número mayor a 0');
+        continue;
+      }
+
+      if (isNaN(monto) || monto <= 0) {
+        fallar('El monto debe ser un número mayor a 0');
+        continue;
+      }
+
+      // Validar fecha
+      const fechaVenta = parsearFechaLocal(venta.fecha_venta);
+      if (isNaN(fechaVenta.getTime())) {
+        fallar('Fecha inválida. Formato esperado: YYYY-MM-DD');
+        continue;
+      }
+
+      // Validar que la fecha no sea futura
+      if (esFechaFutura(fechaVenta)) {
+        fallar('La fecha no puede ser futura');
+        continue;
+      }
+
+      // Validar producto
+      const productoInfo = productoMap.get(String(venta.producto).toLowerCase());
+      if (!productoInfo) {
+        fallar(`Producto "${venta.producto}" no encontrado en tu catálogo`);
+        continue;
+      }
+
+      filas.push({
+        linea,
+        numeroVenta,
+        ok: true,
+        datos: {
+          canalFinal,
+          canalPersonalizadoId,
+          productoId: productoInfo.id,
+          cantidad,
+          precioUnitario: monto / cantidad,
+          fechaVenta,
+          cliente: venta.cliente ? String(venta.cliente).trim() : null
+        }
+      });
+    }
+
+    // Agrupar todas las filas (válidas e inválidas) por número de venta. Las filas
+    // sin numero_venta forman cada una su propio grupo de un solo producto.
+    const grupos = new Map<string, FilaProcesada[]>();
+    filas.forEach((f, idx) => {
+      const clave = f.numeroVenta ?? `__sola_${idx}`;
+      if (!grupos.has(clave)) grupos.set(clave, []);
+      grupos.get(clave)!.push(f);
+    });
+
+    const erroresConLinea: { linea: number; mensaje: string }[] = [];
+    let ventasCreadas = 0;
+
+    for (const [numeroVenta, grupoFilas] of grupos) {
+      // Si alguna línea del grupo falló su propia validación, se descarta la venta
+      // completa: no tiene sentido registrar la venta con solo algunos productos.
+      const invalidas = grupoFilas.filter((f) => !f.ok);
+      if (invalidas.length > 0) {
+        grupoFilas.forEach((f) => {
+          erroresConLinea.push({
+            linea: f.linea,
+            mensaje: f.ok
+              ? `No se importó: otra línea del número de venta "${numeroVenta}" tiene un error`
+              : f.mensaje!
+          });
+        });
+        continue;
+      }
+
+      // Todas las líneas de un mismo número de venta deben compartir canal, fecha y cliente.
+      if (grupoFilas.length > 1) {
+        const primera = grupoFilas[0].datos!;
+        const inconsistente = grupoFilas.some((f) => {
+          const d = f.datos!;
+          return (
+            d.canalFinal !== primera.canalFinal ||
+            d.canalPersonalizadoId !== primera.canalPersonalizadoId ||
+            d.fechaVenta.getTime() !== primera.fechaVenta.getTime() ||
+            (d.cliente ?? '') !== (primera.cliente ?? '')
+          );
+        });
+        if (inconsistente) {
+          grupoFilas.forEach((f) => erroresConLinea.push({
+            linea: f.linea,
+            mensaje: `El canal, la fecha y el cliente deben ser iguales en todas las líneas del número de venta "${numeroVenta}"`
+          }));
+          continue;
+        }
+      }
 
       try {
-        // Validar campos requeridos
-        if (!venta.canal || !venta.producto || !venta.cantidad || !venta.monto || !venta.fecha_venta) {
-          errores.push(`Línea ${linea}: Faltan campos requeridos (canal, producto, cantidad, monto, fecha_venta)`);
-          continue;
-        }
-
-        // Validar canal: debe ser uno de los canales fijos, o el nombre exacto
-        // de uno de los canales personalizados activos del negocio (ej. "Rappi")
-        const canalRaw = String(venta.canal).trim();
-        const canalesFijos: CanalVenta[] = Object.values(CanalVenta).filter((c) => c !== CanalVenta.otro);
-        let canalFinal: CanalVenta;
-        let canalPersonalizadoId: string | null = null;
-
-        if (canalesFijos.includes(canalRaw as CanalVenta)) {
-          canalFinal = canalRaw as CanalVenta;
-        } else {
-          const canalPersonalizado = canalPersonalizadoMap.get(canalRaw.toLowerCase());
-          if (!canalPersonalizado) {
-            errores.push(`Línea ${linea}: Canal inválido "${venta.canal}". Valores válidos: ${canalesFijos.join(', ')}, o el nombre de uno de tus canales personalizados.`);
-            continue;
-          }
-          canalFinal = CanalVenta.otro;
-          canalPersonalizadoId = canalPersonalizado.id;
-        }
-
-        // Validar cantidad y monto
-        const cantidad = parseInt(venta.cantidad);
-        const monto = parseFloat(venta.monto);
-
-        if (isNaN(cantidad) || cantidad <= 0) {
-          errores.push(`Línea ${linea}: La cantidad debe ser un número mayor a 0`);
-          continue;
-        }
-
-        if (isNaN(monto) || monto <= 0) {
-          errores.push(`Línea ${linea}: El monto debe ser un número mayor a 0`);
-          continue;
-        }
-
-        // Validar fecha
-        const fechaVenta = parsearFechaLocal(venta.fecha_venta);
-        if (isNaN(fechaVenta.getTime())) {
-          errores.push(`Línea ${linea}: Fecha inválida. Formato esperado: YYYY-MM-DD`);
-          continue;
-        }
-
-        // Validar que la fecha no sea futura
-        if (esFechaFutura(fechaVenta)) {
-          errores.push(`Línea ${linea}: La fecha no puede ser futura`);
-          continue;
-        }
-
-        // Validar producto
-        const productoInfo = productoMap.get(venta.producto.toLowerCase());
-        if (!productoInfo) {
-          errores.push(`Línea ${linea}: Producto "${venta.producto}" no encontrado en tu catálogo`);
-          continue;
-        }
-
-        // Crear venta y aplicar sus efectos en cascada (stock, cliente, alertas)
-        const { venta: ventaCreada } = await prisma.$transaction((tx) =>
+        const primera = grupoFilas[0].datos!;
+        // Crear la venta (con uno o varios productos) y aplicar sus efectos en cascada
+        await prisma.$transaction((tx) =>
           registrarVentaConStock(tx, {
             negocioId,
-            canal: canalFinal,
-            canalPersonalizadoId,
-            items: [{ productoId: productoInfo.id, cantidad, precioUnitario: monto / cantidad }],
-            fechaVenta,
-            cliente: venta.cliente || null,
+            canal: primera.canalFinal,
+            canalPersonalizadoId: primera.canalPersonalizadoId,
+            items: grupoFilas.map((f) => ({
+              productoId: f.datos!.productoId,
+              cantidad: f.datos!.cantidad,
+              precioUnitario: f.datos!.precioUnitario
+            })),
+            fechaVenta: primera.fechaVenta,
+            cliente: primera.cliente,
             origenCarga: OrigenCarga.importacion
           })
         );
-
-        ventasCreadas.push(ventaCreada);
+        ventasCreadas++;
       } catch (error) {
-        errores.push(`Línea ${linea}: Error al procesar venta`);
+        grupoFilas.forEach((f) => erroresConLinea.push({ linea: f.linea, mensaje: 'Error al procesar venta' }));
       }
     }
+
+    const errores = erroresConLinea
+      .sort((a, b) => a.linea - b.linea)
+      .map((e) => `Línea ${e.linea}: ${e.mensaje}`);
 
     return NextResponse.json({
       message: 'Importación completada',
       totalProcesado: ventasCSV.length,
-      ventasCreadas: ventasCreadas.length,
+      ventasCreadas,
       errores,
       erroresCount: errores.length
     }, { status: 200 });
