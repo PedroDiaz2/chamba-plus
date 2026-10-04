@@ -115,6 +115,8 @@ export default function Ventas() {
   const [showRegistrarVenta, setShowRegistrarVenta] = useState(false);
   const [showImportarMasivo, setShowImportarMasivo] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
   const [loading, setLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -482,10 +484,20 @@ export default function Ventas() {
   const resumenItems = (venta: Venta) =>
     venta.items.map((item) => `${item.cantidad}× ${item.producto.nombre}`).join(', ');
 
-  const filteredVentas = ventas.filter((v) =>
-    v.cliente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.items.some((item) => item.producto.nombre.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredVentas = ventas.filter((v) => {
+    const coincideTexto =
+      v.cliente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.items.some((item) => item.producto.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
+    if (!coincideTexto) return false;
+
+    // Comparar solo la parte YYYY-MM-DD del ISO string (sin pasar por Date) para
+    // no desfasar el día por zona horaria, igual que en el resto de la pantalla.
+    const fecha = v.fechaVenta.split('T')[0];
+    if (fechaInicio && fecha < fechaInicio) return false;
+    if (fechaFin && fecha > fechaFin) return false;
+
+    return true;
+  });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -593,6 +605,40 @@ export default function Ventas() {
             Importar masivo
           </Button>
         </div>
+      </div>
+
+      {/* Filtro de fechas */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <Label htmlFor="filtroFechaInicio" className="text-xs text-muted-foreground">Desde</Label>
+          <Input
+            id="filtroFechaInicio"
+            type="date"
+            value={fechaInicio}
+            onChange={(e) => setFechaInicio(e.target.value)}
+            className="w-40"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="filtroFechaFin" className="text-xs text-muted-foreground">Hasta</Label>
+          <Input
+            id="filtroFechaFin"
+            type="date"
+            value={fechaFin}
+            onChange={(e) => setFechaFin(e.target.value)}
+            className="w-40"
+          />
+        </div>
+        {(fechaInicio || fechaFin) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setFechaInicio(''); setFechaFin(''); }}
+            className="text-muted-foreground"
+          >
+            Limpiar fechas
+          </Button>
+        )}
       </div>
 
       {/* Stats */}

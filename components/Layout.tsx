@@ -32,6 +32,7 @@ export default function Layout({ children, currentScreen, onNavigate, onLogout }
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
   const [negocioNombre, setNegocioNombre] = useState('');
+  const [hayAlertasNoLeidas, setHayAlertasNoLeidas] = useState(false);
 
   useEffect(() => {
     fetch('/api/negocio')
@@ -41,6 +42,18 @@ export default function Layout({ children, currentScreen, onNavigate, onLogout }
       })
       .catch(() => {});
   }, []);
+
+  // Se revisa cada vez que cambia de pantalla para que, al volver de "Alertas"
+  // después de marcarlas como leídas, el punto rojo desaparezca de inmediato.
+  useEffect(() => {
+    fetch('/api/alertas')
+      .then((res) => res.json())
+      .then((data) => {
+        const alertas = data?.alertas || [];
+        setHayAlertasNoLeidas(alertas.some((a: { leida: boolean }) => !a.leida));
+      })
+      .catch(() => {});
+  }, [currentScreen]);
 
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -160,7 +173,9 @@ export default function Layout({ children, currentScreen, onNavigate, onLogout }
             {/* Notifications */}
             <Button variant="ghost" size="icon" className="relative" onClick={() => handleNavigate('alertas')}>
               <Bell size={20} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+              {hayAlertasNoLeidas && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+              )}
             </Button>
 
             {/* User Menu */}
