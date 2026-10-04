@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      await generarAlertaStockSiCorresponde(tx, {
+      const alertaStock = await generarAlertaStockSiCorresponde(tx, {
         negocioId,
         productoId: producto.id,
         nombreProducto: producto.nombre,
@@ -143,10 +143,10 @@ export async function POST(request: NextRequest) {
         stockMinimo: producto.stockMinimo
       });
 
-      return mov;
+      return { mov, alertaStock };
     });
 
-    return NextResponse.json({ movimiento, stockResultante }, { status: 201 });
+    return NextResponse.json({ movimiento: movimiento.mov, stockResultante, alertaStock: movimiento.alertaStock }, { status: 201 });
   } catch (error) {
     console.error('Error al registrar movimiento de inventario:', error);
     return NextResponse.json(

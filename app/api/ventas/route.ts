@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Crear venta y aplicar sus efectos en cascada (stock, cliente, alertas)
-    const { venta, avisoStock } = await prisma.$transaction((tx) =>
+    const { venta, avisoStock, alertasStock } = await prisma.$transaction((tx) =>
       registrarVentaConStock(tx, {
         negocioId,
         canal: canal as CanalVenta,
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    return NextResponse.json({ venta, avisoStock }, { status: 201 });
+    return NextResponse.json({ venta, avisoStock, alertasStock }, { status: 201 });
   } catch (error) {
     console.error('Error al registrar venta:', error);
     return NextResponse.json(

@@ -25,6 +25,7 @@ export interface RegistrarVentaParams {
 export interface RegistrarVentaResult {
   venta: Prisma.VentaGetPayload<{ include: { items: { include: { producto: true } }, canalPersonalizado: true } }>;
   avisoStock: boolean;
+  alertasStock: string[];
 }
 
 // Crea la venta (con una o más líneas de producto/servicio) y aplica sus efectos
@@ -93,6 +94,7 @@ export async function registrarVentaConStock(
   });
 
   let avisoStock = false;
+  const alertasStock: string[] = [];
 
   for (const item of venta.items) {
     // Los servicios no manejan inventario: no hay stock que descontar ni movimiento que registrar.
@@ -119,7 +121,7 @@ export async function registrarVentaConStock(
       }
     });
 
-    await generarAlertaStockSiCorresponde(tx, {
+    const alerta = await generarAlertaStockSiCorresponde(tx, {
       negocioId: params.negocioId,
       productoId: item.productoId,
       nombreProducto: item.producto.nombre,
@@ -127,9 +129,10 @@ export async function registrarVentaConStock(
       stockResultante,
       stockMinimo: item.producto.stockMinimo
     });
+    if (alerta) alertasStock.push(alerta);
 
     if (stockResultante < 0) avisoStock = true;
   }
 
-  return { venta, avisoStock };
+  return { venta, avisoStock, alertasStock };
 }

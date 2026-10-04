@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Upload, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Upload, Pencil, Trash2, Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -135,6 +135,7 @@ export default function Ventas() {
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [ventaAEliminar, setVentaAEliminar] = useState<Venta | null>(null);
   const [eliminandoVenta, setEliminandoVenta] = useState(false);
+  const [ventaDetalle, setVentaDetalle] = useState<Venta | null>(null);
 
   useEffect(() => {
     fetchProductos();
@@ -394,6 +395,10 @@ export default function Ventas() {
       } else {
         toast.success('Venta registrada correctamente');
       }
+      // Alerta visual inmediata cuando esta venta hizo que algún producto cruce su stock mínimo
+      (data.alertasStock || []).forEach((mensaje: string) => {
+        toast.warning(mensaje, { duration: 6000 });
+      });
       setNuevoVenta(crearVentaVacia());
       setShowRegistrarVenta(false);
       fetchVentas();
@@ -559,6 +564,11 @@ export default function Ventas() {
       fetchProductos();
       setCsvFile(null);
 
+      // Alerta visual inmediata cuando alguna de las ventas importadas cruzó el stock mínimo de un producto
+      (data.alertasStock || []).forEach((mensaje: string) => {
+        toast.warning(mensaje, { duration: 6000 });
+      });
+
       if (data.erroresCount > 0) {
         setImportErrors(data.errores);
         toast.warning(`Se importaron ${data.ventasCreadas} venta(s) a partir de ${data.totalProcesado} fila(s) del archivo. ${data.erroresCount} fila(s) con errores, revisa el detalle abajo.`);
@@ -666,7 +676,6 @@ export default function Ventas() {
               <tr>
                 <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Fecha</th>
                 <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Cliente</th>
-                <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Productos</th>
                 <th className="px-4 py-3 text-left font-semibold text-[#0F6E56]">Canal</th>
                 <th className="px-4 py-3 text-right font-semibold text-[#0F6E56]">Monto</th>
                 <th className="px-4 py-3 text-center font-semibold text-[#0F6E56]">Acciones</th>
@@ -682,21 +691,15 @@ export default function Ventas() {
                     {new Date(venta.fechaVenta).toLocaleDateString('es-PE')}
                   </td>
                   <td className="px-4 py-3">{venta.cliente || 'Ocasional'}</td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-0.5">
-                      {venta.items.map((item) => (
-                        <div key={item.id} className="text-xs">
-                          {item.cantidad}× {item.producto.nombre}
-                        </div>
-                      ))}
-                    </div>
-                  </td>
                   <td className="px-4 py-3 text-muted-foreground text-sm">
                     {venta.canal === 'otro' ? (venta.canalPersonalizado?.nombre || 'Otro') : (canalLabels[venta.canal] || venta.canal)}
                   </td>
                   <td className="px-4 py-3 text-right font-bold">S/ {venta.monto.toFixed(2)}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => setVentaDetalle(venta)} title="Ver detalle">
+                        <Eye size={14} />
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => handleAbrirEdicion(venta)}>
                         <Pencil size={14} />
                       </Button>
@@ -709,7 +712,7 @@ export default function Ventas() {
               ))}
               {filteredVentas.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                     No hay ventas registradas
                   </td>
                 </tr>
@@ -932,6 +935,54 @@ export default function Ventas() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Ver detalle de productos de una venta */}
+      <Dialog open={!!ventaDetalle} onOpenChange={(open) => !open && setVentaDetalle(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Detalle de la venta</DialogTitle>
+          </DialogHeader>
+          {ventaDetalle && (
+            <div className="space-y-4 py-2">
+              <p className="text-xs text-muted-foreground">
+                {new Date(ventaDetalle.fechaVenta).toLocaleDateString('es-PE')} · {ventaDetalle.cliente || 'Ocasional'} ·{' '}
+                {ventaDetalle.canal === 'otro' ? (ventaDetalle.canalPersonalizado?.nombre || 'Otro') : (canalLabels[ventaDetalle.canal] || ventaDetalle.canal)}
+              </p>
+              <div className="border border-[#e5e5e3] rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#F0FAF6] border-b border-[#e5e5e3]">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-[#0F6E56]">Producto</th>
+                      <th className="px-3 py-2 text-right font-semibold text-[#0F6E56]">Cantidad</th>
+                      <th className="px-3 py-2 text-right font-semibold text-[#0F6E56]">Precio unit.</th>
+                      <th className="px-3 py-2 text-right font-semibold text-[#0F6E56]">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ventaDetalle.items.map((item) => (
+                      <tr key={item.id} className="border-b border-[#e5e5e3] last:border-b-0">
+                        <td className="px-3 py-2">{item.producto.nombre}</td>
+                        <td className="px-3 py-2 text-right">{item.cantidad}</td>
+                        <td className="px-3 py-2 text-right">S/ {item.precioUnitario.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">S/ {item.monto.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end text-sm space-y-0.5 flex-col items-end">
+                {ventaDetalle.descuento > 0 && (
+                  <p className="text-muted-foreground">Descuento: S/ {ventaDetalle.descuento.toFixed(2)}</p>
+                )}
+                <p className="font-bold text-base">Total: S/ {ventaDetalle.monto.toFixed(2)}</p>
+              </div>
+              <div className="flex justify-end pt-2">
+                <Button variant="outline" onClick={() => setVentaDetalle(null)}>Cerrar</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

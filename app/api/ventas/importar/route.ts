@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
     });
 
     const erroresConLinea: { linea: number; mensaje: string }[] = [];
+    const alertasStock: string[] = [];
     let ventasCreadas = 0;
 
     for (const [numeroVenta, grupoFilas] of grupos) {
@@ -206,7 +207,7 @@ export async function POST(request: NextRequest) {
       try {
         const primera = grupoFilas[0].datos!;
         // Crear la venta (con uno o varios productos) y aplicar sus efectos en cascada
-        await prisma.$transaction((tx) =>
+        const { alertasStock: alertasGrupo } = await prisma.$transaction((tx) =>
           registrarVentaConStock(tx, {
             negocioId,
             canal: primera.canalFinal,
@@ -221,6 +222,7 @@ export async function POST(request: NextRequest) {
             origenCarga: OrigenCarga.importacion
           })
         );
+        alertasStock.push(...alertasGrupo);
         ventasCreadas++;
       } catch (error) {
         grupoFilas.forEach((f) => erroresConLinea.push({ linea: f.linea, mensaje: 'Error al procesar venta' }));
@@ -236,7 +238,8 @@ export async function POST(request: NextRequest) {
       totalProcesado: ventasCSV.length,
       ventasCreadas,
       errores,
-      erroresCount: errores.length
+      erroresCount: errores.length,
+      alertasStock
     }, { status: 200 });
   } catch (error) {
     console.error('Error en importación:', error);

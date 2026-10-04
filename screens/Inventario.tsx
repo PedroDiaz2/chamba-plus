@@ -129,6 +129,10 @@ export default function Inventario() {
       }
 
       toast.success('Movimiento de inventario registrado');
+      // Alerta visual inmediata cuando este movimiento hizo que el producto cruce su stock mínimo
+      if (data.alertaStock) {
+        toast.warning(data.alertaStock, { duration: 6000 });
+      }
       setNuevoMovimiento({ productoId: '', tipo: 'ingreso', cantidad: 1, motivo: '' });
       setShowIngreso(false);
       fetchInventario();
